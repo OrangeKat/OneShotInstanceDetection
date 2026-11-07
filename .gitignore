@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# uv / venv
+.venv/
+uv.lock.bak
+
+# Vendored ROCm wheels (~1.9 GB, rebuilt by scripts/prepare_rocm_wheels.py)
+vendor/pytorch-rocm/*
+!vendor/pytorch-rocm/.gitignore
+
+# Project data and results
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

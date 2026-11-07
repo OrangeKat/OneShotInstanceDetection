@@ -1,0 +1,75 @@
+# Object tracking on AMD GPUs (ROCm), based on pytorch-rocm-template.
+#
+# On Linux this installs AMD's ROCm builds of torch / torchvision /
+# torchaudio from the `vendor/pytorch-rocm/` find-links directory, so
+# `torch.cuda` drives a Radeon GPU out of the box. Elsewhere (CPU / CUDA /
+# Metal) stock PyPI torch is used.
+
+[project]
+name = "object-tracking"
+version = "0.1.0"
+description = "Object tracking with PyTorch on AMD GPUs (ROCm)."
+requires-python = ">=3.12,<3.13"
+# Bounded to Python 3.12: AMD ships the ROCm JIT (triton-rocm) with legacy
+# `linux_x86_64` wheel tags, which `uv lock` never accepts, so we vendor a
+# retagged cp312 wheel (see scripts/prepare_rocm_wheels.py — run it once
+# before `uv lock` on a fresh clone).
+dependencies = [
+    # Linux (AMD GPU): exact AMD ROCm builds served from the vendored,
+    # retagged wheel closure (scripts/prepare_rocm_wheels.py + [tool.uv]
+    # find-links). ==-pins with a *local* build tag match only those wheels
+    # (PEP 440: public == constraints match versions with local segments).
+    "torch[device-gfx1100]==2.14.0+rocm10.1.0; sys_platform == 'linux'",
+    # 0.29.0a0 is the AMD index's torch-2.14-aligned torchvision for
+    # rocm10.1.0 (pre-release version tag, see prepare_rocm_wheels.py).
+    # Kernels ship separately per arch — install with the device extra:
+    "torchvision[device-gfx1100]==0.29.0a0+rocm10.1.0; sys_platform == 'linux'",
+    "torchaudio==2.11.0.2+rocm10.1.0; sys_platform == 'linux'",
+    # everywhere else (CPU / CUDA / Metal): stock PyPI torch aligned to
+    # torchvision 0.28.0's static `torch==2.13.0` requirement.
+    "torch==2.13.0; sys_platform != 'linux'",
+    "torchvision==0.28.0; sys_platform != 'linux'",
+    "numpy",
+    # Video decoding / frame I/O and drawing boxes for tracking demos.
+    "opencv-python",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[dependency-groups]
+test = ["pytest"]
+
+# --- GPU backends -----------------------------------------------------------
+# On Linux, the AMD stable wheel repo serves the entire ROCm PyTorch stack
+# (torch / torchvision / torchaudio / triton / rocm-sdk-*, pinned in
+# [project.dependencies] per sys_platform). AMD publishes those wheels with
+# legacy `linux_x86_64` platform tags, which uv lock cannot accept, so
+# scripts/prepare_rocm_wheels.py retags them to `manylinux_2_28_x86_64`
+# and stages the full dependency closure under vendor/pytorch-rocm (this
+# find-links directory). Run it once on a fresh clone, and after any torch
+# version bump in [project.dependencies].
+#
+# Version pairing matters for the AMD wheels: torchvision version must match
+# the torch minor (2.14 -> 0.29, 2.13 -> 0.28, 2.12 -> 0.27) or its C++ ops
+# fail to register at import ("operator torchvision::nms does not exist").
+# On torch>=2.14, torchvision device kernels also live in separate per-arch
+# packages: install with the `torchvision[device-gfx1100]` extra or HIP
+# launches fail with "invalid kernel file". See comments in
+# scripts/prepare_rocm_wheels.py (SEED_WHEELS).
+# The default PyPI index serves CUDA wheels (NVIDIA) / Metal on macOS for
+# the non-Linux branches of the dependency markers.
+#
+# To switch:
+#   CUDA (NVIDIA):  only markers matter — remove the ==+rocm pins and the
+#                   find-links entry, keep torch on PyPI
+#   CPU-only:       same, keep torch on PyPI (CPU wheels)
+#   torch bump:     update [project.dependencies] AND SEED_WHEELS in
+#                   scripts/prepare_rocm_wheels.py, then re-run it.
+# ---------------------------------------------------------------------------
+
+# Local wheel dir holding the retagged AMD wheels (built by
+# scripts/prepare_rocm_wheels.py). find-links works for transitive deps,
+# unlike [tool.uv.sources], which only applies to direct dependencies.
+[tool.uv]
+find-links = ["vendor/pytorch-rocm"]
