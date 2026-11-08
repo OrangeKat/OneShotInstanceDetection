@@ -3,6 +3,10 @@
 > **Status.** The design below is implemented for the first dataset and the
 > three classical baselines. See §6 for the current harness, results, and
 > limitations.
+>
+> **Project arc.** Benchmark current solutions → diagnose failure modes → build
+> the final pipeline / full model → publish a full report. One devlog per week,
+> published on LinkedIn and kept in this folder.
 
 ## Contents
 

@@ -35,6 +35,21 @@ A single RANSAC homography returns only the dominant instance. Finding every
 occurrence needs a multi-model step: sequential RANSAC, J-Linkage / T-Linkage,
 proposal-then-verify, or generalized Hough voting.
 
+## Project arc
+
+This is not only a benchmark. The sequence is:
+
+1. **Benchmark current solutions** — a fixed harness and comparable classical /
+   learned baselines.
+2. **Diagnose the gaps** — per-class, logo-size, multi-instance, confidence, and
+   latency analysis to find where methods actually break.
+3. **Build the final pipeline** — a full model / end-to-end approach informed by
+   those failures, not just the next model on a list.
+4. **Write the final report** — methodology, results, failure analysis, and
+   conclusions.
+
+Each week gets one devlog, published on LinkedIn and kept in `docs/devnotes/`.
+
 ## Baseline suite
 
 The benchmark keeps the pipeline fixed so models are actually comparable.
@@ -323,6 +338,17 @@ precision-recall, and latency.
 - [ ] Foundation embeddings: DINOv2, DINOv3
 - [ ] Multi-instance handling
 - [ ] Fine-tuning experiments
+- [ ] Final pipeline + full model
+- [ ] Final report
+- [ ] Weekly devlogs (ongoing)
+
+## Devlogs
+
+One devlog per week, published on LinkedIn and kept here.
+
+- [Devlog index](docs/devnotes/README.md)
+- [Week 1](docs/devnotes/week1-devnotes.md) — goal, design, datasets, metrics,
+  first baseline results, and failure analysis.
 
 ## Documentation
 
