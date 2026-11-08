@@ -12,11 +12,9 @@ uv.lock.bak
 vendor/pytorch-rocm/*
 !vendor/pytorch-rocm/.gitignore
 
-# Project data and results
+# Project data and results (created on demand; not tracked)
 data/*
-!data/.gitkeep
 outputs/*
-!outputs/.gitkeep
 
 # Editors / OS
 .idea/
