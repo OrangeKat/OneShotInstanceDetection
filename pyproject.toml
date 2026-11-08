@@ -1,4 +1,4 @@
-# Object tracking on AMD GPUs (ROCm), based on pytorch-rocm-template.
+# Detection on AMD GPUs (ROCm), based on pytorch-rocm-template.
 #
 # On Linux this installs AMD's ROCm builds of torch / torchvision /
 # torchaudio from the `vendor/pytorch-rocm/` find-links directory, so
@@ -6,9 +6,9 @@
 # Metal) stock PyPI torch is used.
 
 [project]
-name = "object-tracking"
+name = "detection"
 version = "0.1.0"
-description = "Object tracking with PyTorch on AMD GPUs (ROCm)."
+description = "Instance detection with PyTorch on AMD GPUs (ROCm)."
 requires-python = ">=3.12,<3.13"
 # Bounded to Python 3.12: AMD ships the ROCm JIT (triton-rocm) with legacy
 # `linux_x86_64` wheel tags, which `uv lock` never accepts, so we vendor a
@@ -30,8 +30,9 @@ dependencies = [
     "torch==2.13.0; sys_platform != 'linux'",
     "torchvision==0.28.0; sys_platform != 'linux'",
     "numpy",
-    # Video decoding / frame I/O and drawing boxes for tracking demos.
-    "opencv-python",
+    # Image I/O, drawing, and the xfeatures2d AKAZE baseline.
+    "opencv-contrib-python",
+    "matplotlib>=3.11.2",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +40,7 @@ test = ["pytest"]
 
 [dependency-groups]
 test = ["pytest"]
+dev = ["ruff"]
 
 # --- GPU backends -----------------------------------------------------------
 # On Linux, the AMD stable wheel repo serves the entire ROCm PyTorch stack
@@ -73,3 +75,19 @@ test = ["pytest"]
 # unlike [tool.uv.sources], which only applies to direct dependencies.
 [tool.uv]
 find-links = ["vendor/pytorch-rocm"]
+
+# --- Linting / formatting ---------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "ANN", "D"]
+
+# Google-style docstrings.
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Existing scripts predate the lint config.
+"scripts/*.py" = ["D"]
