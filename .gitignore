@@ -16,6 +16,9 @@ vendor/pytorch-rocm/*
 data/*
 outputs/*
 
+# Local drafts and notes (not tracked)
+local_files/
+
 # Editors / OS
 .idea/
 .vscode/
