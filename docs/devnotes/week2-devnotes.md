@@ -43,14 +43,16 @@ simple ratio test at 0.75, RANSAC threshold 3 px.
   pixels; missing homographies count as failures.
 - **Corner error**: mean Euclidean distance between the four reference corners
   projected by the ground-truth and estimated homographies.
+- **AUC@k**: normalized area under the cumulative corner-error curve up to `k`
+  pixels. Missing homographies count as infinite error.
 
-| Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | Median CE |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 1.344 px |
-| ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
-| AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
-| SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 1.447 px |
-| ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 1.181 px |
+| Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | AUC@1 | AUC@3 | AUC@5 | AUC@10 | Median CE |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 0.236 | 0.477 | 0.593 | 0.726 | 1.344 px |
+| ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 0.123 | 0.318 | 0.436 | 0.584 | 2.515 px |
+| AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 0.134 | 0.362 | 0.479 | 0.627 | 2.025 px |
+| SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 0.170 | 0.455 | 0.600 | 0.751 | 1.447 px |
+| ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 0.223 | 0.505 | 0.643 | 0.778 | 1.181 px |
 
 The learned models use LightGlue's own match-score filter
 (`filter_threshold=0.1`); `--ratio` only applies to the classical matchers.
@@ -62,6 +64,11 @@ ratio tests, mutual nearest neighbors, 108 sequences, and
 expected. The learned rows are measured under the same MMA/HEA protocol;
 published SuperPoint/ALIKED HPatches numbers use homography AUC, so compare
 within the same metric.
+
+The measured AUC values are lower than the published learned-model AUC numbers
+because the protocols differ in input resize, keypoint budget, RANSAC settings,
+and corner-error definition. Use the measured AUC for relative comparison
+within this harness, not as a reproduction of the published values.
 
 Per split, viewpoint is harder than illumination for homography accuracy:
 

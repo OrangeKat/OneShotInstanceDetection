@@ -358,21 +358,23 @@ cross-class negatives instead of the original 3,000 no-logo images.
 
 116 sequences, 580 pairs, 2,048 keypoints, Lowe ratio 0.75.
 
-| Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | Median CE |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 1.344 px |
-| ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
-| AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
-| SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 1.447 px |
-| ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 1.181 px |
+| Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | AUC@1 | AUC@3 | AUC@5 | AUC@10 | Median CE |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 0.236 | 0.477 | 0.593 | 0.726 | 1.344 px |
+| ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 0.123 | 0.318 | 0.436 | 0.584 | 2.515 px |
+| AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 0.134 | 0.362 | 0.479 | 0.627 | 2.025 px |
+| SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 0.170 | 0.455 | 0.600 | 0.751 | 1.447 px |
+| ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 0.223 | 0.505 | 0.643 | 0.778 | 1.181 px |
 
 For reference, [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT
 MMA@3 / HEA@3 of 0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their
 protocol uses tuned ratio tests, mutual nearest neighbors, 108 sequences, and
 [OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
 expected. The learned-model rows are project measurements under the same
-MMA/HEA protocol; published SuperPoint/ALIKED results use homography AUC, so
-compare them within the same metric.
+MMA/HEA/AUC protocol; published SuperPoint/ALIKED results use different
+homography-AUC settings, so compare them within the same metric. Measured AUC
+is lower than published values because of differences in resize, keypoint
+budget, RANSAC, and corner-error definition.
 
 Adding another matcher only requires registering it in `MODELS` and running the
 same command — no separate validation script.
