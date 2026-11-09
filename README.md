@@ -394,6 +394,16 @@ precision-recall, and latency.
 
 One devlog per week, published on LinkedIn and kept here.
 
+Weekly states are tagged in git. To see the project as it was at the end of a
+previous week:
+
+```bash
+git tag --list 'week-*'
+git checkout week-1
+```
+
+Return to the latest state with `git checkout main`.
+
 - [Devlog index](docs/devnotes/README.md)
 - [Week 1](docs/devnotes/week1-devnotes.md) — goal, design, datasets, metrics,
   first baseline results, and failure analysis.
