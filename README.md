@@ -56,8 +56,9 @@ The benchmark keeps the pipeline fixed so models are actually comparable.
 Each family has at least one simple baseline and one stronger entry.
 
 Implemented now: **SIFT + BF-L2**, **ORB + BF-Hamming**, **AKAZE +
-BF-Hamming**, all followed by a ratio test and RANSAC homography. The rest of
-the suite is planned.
+BF-Hamming**, **SuperPoint + LightGlue**, and **ALIKED + LightGlue**, all
+followed by a ratio/filter step and RANSAC homography. The rest of the suite is
+planned.
 
 | Layer | Baseline | Advanced |
 |---|---|---|
@@ -82,6 +83,11 @@ Notes:
   KD-tree is for float descriptors such as SIFT.
 - OpenCV 5 moved AKAZE to `cv2.xfeatures2d`, so the project depends on
   `opencv-contrib-python` rather than `opencv-python`.
+- SuperPoint/ALIKED and LightGlue weights are downloaded on first use to
+  `~/.cache/torch/hub/checkpoints`. LightGlue uses `flash=False` by default for
+  ROCm compatibility.
+- The `--ratio` flag applies to the classical ratio test. LightGlue uses its own
+  match-score filter (`filter_threshold=0.1`).
 - SuperGlue's original implementation uses custom CUDA ops, so LightGlue is
   the safer default on ROCm.
 - DINOv2 is best used for pruning / retrieval, not as the sole descriptor.
@@ -167,7 +173,9 @@ make hpatches MODELS="sift orb"
 make bench MANIFEST=path/to/manifest.json OUTPUT=outputs/custom
 ```
 
-Run `main.py` directly for flags not exposed by the Makefile.
+`make bench` and `make hpatches` default to all five implemented models. Use
+`MODELS="..."` for a faster subset. Run `main.py` directly for flags not
+exposed by the Makefile.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -175,7 +183,7 @@ Run `main.py` directly for flags not exposed by the Makefile.
 | `--manifest` | required for `box` | JSON or JSONL reference/query manifest |
 | `--root` | manifest directory | base directory for relative paths |
 | `--hpatches-dir` | `data/hpatches` | directory containing `hpatches-sequences-release` |
-| `--models` | `all` | `sift`, `orb`, `akaze`, `all` |
+| `--models` | `all` | `sift`, `orb`, `akaze`, `superpoint_lightglue`, `aliked_lightglue`, `all` |
 | `--output` | `outputs/benchmark` | directory for `results.json` and `results.md` |
 | `--max-samples` | all | limit samples (box) or pairs (HPatches) |
 | `--iou-threshold` | `0.5` | IoU threshold for a box hit |
@@ -224,7 +232,8 @@ Each record is one reference/query pair:
 | `docs/devnotes/week1-devnotes.md` | goal, model options, datasets, metrics, model selection, current implementation, bibliography |
 | `docs/rocm-setup.md` | full ROCm / WSL2 install and troubleshooting guide |
 | `src/pipeline.py` | benchmark implementation and CLI |
-| `src/models/feature_matching/` | SIFT, ORB, AKAZE matchers and shared matching helpers |
+| `src/models/feature_matching/` | classical models, LightGlue matchers, shared helpers |
+| `src/models/feature_matching/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
 | `src/utils/logger.py` | stderr logger helper |
 | `src/analysis/` | failure-analysis data, metrics, plots, and report helpers |

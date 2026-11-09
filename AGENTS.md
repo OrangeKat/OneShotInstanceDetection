@@ -36,7 +36,8 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `main.py` | benchmark CLI entry point; delegates to `src/pipeline.py` |
 | `Makefile` | common setup, benchmark, validation, and analysis commands |
 | `src/pipeline.py` | box-AP and HPatches protocols, model registry, reports |
-| `src/models/feature_matching/` | SIFT, ORB, AKAZE and shared matching helpers |
+| `src/models/feature_matching/` | classical models, LightGlue matchers, shared helpers |
+| `src/models/feature_matching/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
 | `src/analysis/` | failure-analysis data, metrics, plots, tables, report |
 | `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
@@ -64,6 +65,10 @@ make gpu
 - Python 3.12 is required by the ROCm wheel pins.
 - OpenCV 5 moved AKAZE to `cv2.xfeatures2d`; the project depends on
   `opencv-contrib-python`, not `opencv-python`.
+- SuperPoint/LightGlue and ALIKED/LightGlue use `kornia` and download weights
+  to `~/.cache/torch/hub/checkpoints` on first use.
+- LightGlue runs with `flash=False` by default for ROCm compatibility.
+- `--ratio` applies to classical matchers; LightGlue uses `filter_threshold=0.1`.
 - On WSL2, run `bash scripts/setup_wsl_rocm.sh` first.
 
 ## Benchmarks
@@ -109,14 +114,14 @@ make analyze
 ## Adding a model
 
 1. Implement `FeatureMatcher.match(reference, query) -> MatchResult` in
-   `src/models/feature_matching/`.
-2. Export it from `src/models/feature_matching/__init__.py`.
+   `src/models/feature_matching/` (classical or LightGlue subpackage).
+2. Export it from the relevant `__init__.py`.
 3. Register it in `MODELS` in `src/pipeline.py`.
 4. Run both protocols:
 
 ```bash
-make bench MODELS="<name>"
-make hpatches MODELS="<name>"
+make bench MODELS="superpoint_lightglue"
+make hpatches MODELS="superpoint_lightglue"
 ```
 
 5. Update README/devnotes results if the change is user-visible.

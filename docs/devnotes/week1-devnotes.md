@@ -213,7 +213,7 @@ Allowed, but not training from scratch:
 - Entry point: `main.py`; implementation: `src/pipeline.py`.
 - Dataset: manifest-backed `InstanceDataset` in `src/utils/dataset.py` —
   JSON or JSONL, absolute boxes, optional reference crop, negative queries.
-- Models: `src/models/feature_matching/{sift,orb,akaze}.py`, with shared
+- Models: `src/models/feature_matching/classical/{sift,orb,akaze}.py`, with shared
   matching and RANSAC helpers in `base.py`.
 - Metrics: box protocol — hit rate at IoU@0.5, 11-point AP@0.5, mean IoU,
   match/inlier counts, latency.

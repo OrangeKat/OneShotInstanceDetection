@@ -15,6 +15,8 @@
   metrics, and the Markdown report.
 - Added `scripts/prepare_hpatches.py` for the sequence download and box-AP
   manifest.
+- Added SuperPoint + LightGlue and ALIKED + LightGlue, using vendored LightGlue
+  components and the same `FeatureMatcher` interface.
 - Added failure analysis over the FlickrLogos-32 results: per-class, logo-size,
   multi-instance, confidence, and latency breakdowns.
 
@@ -57,7 +59,39 @@ Per split, viewpoint is harder than illumination for homography accuracy:
 | ORB | 0.670 | 0.393 |
 | AKAZE | 0.719 | 0.458 |
 
-## 3. FlickrLogos-32 Failure Analysis
+## 3. Expected HPatches Results for the Planned Suite
+
+This table lists published HPatches reference values for the models selected in
+week 1 §5.2. It is a sanity-check target, not one leaderboard: protocols differ
+in keypoint budget, resize, RANSAC vs DLT, and error thresholds.
+
+| Model | HPatches metric | Published value | Source |
+|---|---|---|---|
+| SIFT | MMA@3 / HEA@3 | 0.87 / 0.76 | Efe et al. 2021 |
+| ORB | MMA@3 / HEA@3 | 0.68 / 0.40 | Efe et al. 2021 |
+| AKAZE | MMA@3 / HEA@3 | 0.80 / 0.65 | Efe et al. 2021 |
+| SuperPoint + LightGlue | AUC@3/5/10 px | 54.2 / 68.3 / 81.5 | SOTA2 leaderboard |
+| ALIKED + LightGlue | AUC@3/5/10 px | 66.2 / 76.9 / 86.3 | FlexGlue, Table 2 |
+| LoFTR | AUC@3/5/10 px | 65.9 / 75.6 / 84.6 | SOTA2 leaderboard |
+| RoMa | AUC@1/3/5 px (RANSAC) | 44.7 / 72.6 / 81.4 | MV-RoMa, Table 1 |
+| FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | FlexGlue, Table 2 |
+| DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches matcher |
+
+Notes:
+
+- The classical values use MMA/HEA at 3 px with tuned ratio tests, mutual
+  nearest neighbors, and 108 sequences. Our harness uses a simple ratio test at
+  0.75 and all 116 sequences, so the classical numbers should be lower.
+- The learned/dense rows report homography AUC, while the current HPatches
+  protocol reports MMA/HEA/corner error. To compare directly, add homography
+  AUC to the HPatches report or compare only within the same metric.
+- RoMa uses AUC@1/3/5 in its source, while the other learned rows use
+  AUC@3/5/10; do not compare across threshold sets.
+- DINOv2 and DINOv3 are project-specific foundation-embedding baselines. No
+  standard HPatches sequence result exists, so their numbers will only be
+  comparable within this project.
+
+## 4. FlickrLogos-32 Failure Analysis
 
 The failure analysis splits every pair into hit, wrong box, no prediction,
 false positive, or true negative.
@@ -78,7 +112,7 @@ false positive, or true negative.
   AKAZE 0.261 → 0.163 (single → multi).
 - Worst SIFT classes include `apple`, `carlsberg`, `nvidia`, `pepsi`, `shell`.
 
-## 4. Next Steps
+## 5. Next Steps
 
 - Add the next model to `MODELS` and run both protocols; no new benchmark code
   should be needed.
@@ -88,7 +122,7 @@ false positive, or true negative.
 - Use the failure analysis to choose the final pipeline, then write the final
   report.
 
-## 5. References
+## 6. References
 
 - Week 1 design and bibliography:
   [week1-devnotes.md](week1-devnotes.md)
@@ -98,3 +132,19 @@ false positive, or true negative.
 - V. Balntas, K. Lenc, A. Vedaldi, K. Mikolajczyk. 2017. **HPatches: A Benchmark
   and Evaluation of Handcrafted and Learned Local Descriptors.** *CVPR*.
   [arXiv](https://arxiv.org/abs/1704.05939)
+- P. Lindenberger, P.-E. Sarlin, M. Pollefeys. 2023. **LightGlue: Local Feature
+  Matching at Light Speed.** *ICCV*. [arXiv](https://arxiv.org/abs/2306.13643)
+- J. Sun, Z. Shen, Y. Wang, H. Bao, X. Zhou. 2021. **LoFTR: Detector-Free Local
+  Feature Matching with Transformers.** *CVPR*.
+  [arXiv](https://arxiv.org/abs/2104.00680)
+- J. Edstedt, Q. Sun, G. Bökman, M. Wadenbäck, M. Felsberg. 2024. **RoMa:
+  Robust Dense Feature Matching.** *CVPR*.
+  [arXiv](https://arxiv.org/abs/2305.15404)
+- P. Lindenberger, P.-E. Sarlin, O. Miksik, M. Pollefeys. 2026. **FlexGlue:
+  Sparse-to-Dense Feature Matching and Visual Disambiguation.** *arXiv*.
+  [arXiv](https://arxiv.org/abs/2610.32976)
+- J. Lee, S. Kang, S. Yoo. 2026. **MV-RoMa: From Pairwise Matching into
+  Multi-View Track Reconstruction.** *arXiv*.
+  [arXiv](https://arxiv.org/abs/2603.27542)
+- SOTA2. **Homography estimation on HPatches leaderboard.**
+  [leaderboard](https://www.sota2.com/research/sota/homography-estimation-on-hpatches)
