@@ -21,6 +21,11 @@
 - Added SuperPoint + LightGlue and ALIKED + LightGlue, using vendored
   [LightGlue](https://github.com/cvg/LightGlue) components and the same
   `FeatureMatcher` interface.
+- Added [LoFTR](https://arxiv.org/abs/2104.00680) via Kornia,
+  [RoMa v1](https://arxiv.org/abs/2305.15404) with vendored inference code, and
+  [FlexGlue](https://arxiv.org/abs/2610.32976) with vendored inference code.
+- The box benchmark now streams samples per model instead of preloading every
+  image, keeping memory bounded on the full five-dataset suite.
 - Added failure analysis over the FlickrLogos-32 results: per-class, logo-size,
   multi-instance, confidence, and latency breakdowns.
 

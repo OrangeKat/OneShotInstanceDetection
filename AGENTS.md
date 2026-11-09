@@ -36,8 +36,10 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `main.py` | benchmark CLI entry point; delegates to `src/pipeline.py` |
 | `Makefile` | common setup, benchmark, validation, and analysis commands |
 | `src/pipeline.py` | box-AP and HPatches protocols, model registry, reports |
-| `src/models/feature_matching/` | classical models, LightGlue matchers, shared helpers |
+| `src/models/feature_matching/` | classical, LightGlue, LoFTR, RoMa, FlexGlue matchers |
 | `src/models/feature_matching/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
+| `src/models/feature_matching/roma/_vendor/` | vendored RoMa inference code (MIT) |
+| `src/models/feature_matching/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
 | `src/analysis/` | failure-analysis data, metrics, plots, tables, report |
 | `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
@@ -69,6 +71,8 @@ make gpu
   to `~/.cache/torch/hub/checkpoints` on first use.
 - LightGlue runs with `flash=False` by default for ROCm compatibility.
 - `--ratio` applies to classical matchers; LightGlue uses `filter_threshold=0.1`.
+- RoMa and FlexGlue use vendored inference code and download official weights on
+  first use. LoFTR uses Kornia's outdoor weights.
 - On WSL2, run `bash scripts/setup_wsl_rocm.sh` first.
 
 ## Benchmarks
@@ -120,8 +124,8 @@ make analyze
 4. Run both protocols:
 
 ```bash
-make bench MODELS="superpoint_lightglue"
-make hpatches MODELS="superpoint_lightglue"
+make bench MODELS="loftr"
+make hpatches MODELS="roma"
 ```
 
 5. Update README/devnotes results if the change is user-visible.

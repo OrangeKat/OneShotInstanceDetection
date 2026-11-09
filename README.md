@@ -59,9 +59,9 @@ The benchmark keeps the pipeline fixed so models are actually comparable.
 Each family has at least one simple baseline and one stronger entry.
 
 Implemented now: **SIFT + BF-L2**, **ORB + BF-Hamming**, **AKAZE +
-BF-Hamming**, **SuperPoint + LightGlue**, and **ALIKED + LightGlue**, all
-followed by a ratio/filter step and RANSAC homography. The rest of the suite is
-planned. Paper links are in the table below.
+BF-Hamming**, **SuperPoint + LightGlue**, **ALIKED + LightGlue**, **LoFTR**,
+**RoMa v1**, and **FlexGlue**, all followed by RANSAC homography. The rest of
+the suite is planned. Paper links are in the table below.
 
 | Layer | Baseline | Advanced |
 |---|---|---|
@@ -92,6 +92,14 @@ Notes:
 - [SuperGlue](https://arxiv.org/abs/1911.11763)'s original implementation uses
   custom CUDA ops, so [LightGlue](https://arxiv.org/abs/2306.13643) is the safer
   default on ROCm.
+- **LoFTR** uses Kornia's `outdoor` weights. LoFTR ignores `--ratio` because it
+  is detector-free and returns matched keypoints directly.
+- **RoMa v1** uses the official outdoor weights with native local correlation
+  (`use_custom_corr=False`), 560 px coarse and 864 px upsample resolution.
+- **FlexGlue** uses the official weights with an ALIKED detector
+  (`origin="corner"`) and its internal DINOv3-ConvNeXt descriptor.
+- RoMa and FlexGlue code is vendored under the model directory with its
+  upstream license; LoFTR is provided by Kornia.
 - [DINOv2](https://arxiv.org/abs/2304.07193) is best used for pruning /
   retrieval, not as the sole descriptor. [OmniGlue](https://arxiv.org/abs/2405.12979)
   uses it as bilinearly interpolated per-keypoint guidance `g_i`, while the
@@ -187,7 +195,7 @@ exposed by the Makefile.
 | `--manifest` | required for `box` | JSON or JSONL reference/query manifest |
 | `--root` | manifest directory | base directory for relative paths |
 | `--hpatches-dir` | `data/hpatches` | directory containing `hpatches-sequences-release` |
-| `--models` | `all` | `sift`, `orb`, `akaze`, `superpoint_lightglue`, `aliked_lightglue`, `all` |
+| `--models` | `all` | `sift`, `orb`, `akaze`, `superpoint_lightglue`, `aliked_lightglue`, `loftr`, `roma`, `flexglue`, `all` |
 | `--output` | `outputs/benchmark` | directory for `results.json` and `results.md` |
 | `--max-samples` | all | limit samples (box) or pairs (HPatches) |
 | `--iou-threshold` | `0.5` | IoU threshold for a box hit |
@@ -236,8 +244,10 @@ Each record is one reference/query pair:
 | `docs/devnotes/week1-devnotes.md` | goal, model options, datasets, metrics, model selection, current implementation, bibliography |
 | `docs/rocm-setup.md` | full ROCm / WSL2 install and troubleshooting guide |
 | `src/pipeline.py` | benchmark implementation and CLI |
-| `src/models/feature_matching/` | classical models, LightGlue matchers, shared helpers |
+| `src/models/feature_matching/` | classical, LightGlue, LoFTR, RoMa, and FlexGlue matchers |
 | `src/models/feature_matching/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
+| `src/models/feature_matching/roma/_vendor/` | vendored RoMa inference code (MIT) |
+| `src/models/feature_matching/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
 | `src/utils/logger.py` | stderr logger helper |
 | `src/analysis/` | failure-analysis data, metrics, plots, and report helpers |
