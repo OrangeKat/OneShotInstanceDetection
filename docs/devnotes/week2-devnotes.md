@@ -24,6 +24,9 @@
 - Added [LoFTR](https://arxiv.org/abs/2104.00680) via Kornia,
   [RoMa v1](https://arxiv.org/abs/2305.15404) with vendored inference code, and
   [FlexGlue](https://arxiv.org/abs/2610.32976) with vendored inference code.
+  The LoFTR and FlexGlue wrappers cap the long image side at 640 px and map
+  keypoints back to the original resolution; unbounded HPatches inputs (up to
+  6.3 MP) would otherwise exhaust memory.
 - The box benchmark now streams samples per model instead of preloading every
   image, keeping memory bounded on the full five-dataset suite.
 - Added failure analysis over the FlickrLogos-32 results: per-class, logo-size,
@@ -38,8 +41,11 @@ make hpatches
 
 ## 2. HPatches Validation
 
-**Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints,
-simple ratio test at 0.75, RANSAC threshold 3 px.
+**Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints
+(or correspondences for dense matchers), RANSAC threshold 3 px. Classical
+matchers use a simple ratio test at 0.75; the learned matchers use their own
+score filters. LoFTR and FlexGlue see images with the long side capped at
+640 px.
 
 - **MMA@k**: per-pair fraction of matches within `k` pixels after projecting
   reference keypoints through the ground-truth homography; averaged over pairs
@@ -58,9 +64,14 @@ simple ratio test at 0.75, RANSAC threshold 3 px.
 | AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 0.134 | 0.362 | 0.479 | 0.627 | 2.025 px |
 | SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 0.170 | 0.455 | 0.600 | 0.751 | 1.447 px |
 | ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 0.223 | 0.505 | 0.643 | 0.778 | 1.181 px |
+| LoFTR | 0.516 | 0.847 | 0.914 | 0.948 | 0.479 | 0.762 | 0.853 | 0.914 | 0.269 | 0.528 | 0.642 | 0.767 | 1.080 px |
+| RoMa | 0.703 | 0.937 | 0.976 | 0.990 | 0.248 | 0.548 | 0.685 | 0.828 | 0.110 | 0.324 | 0.445 | 0.606 | 2.445 px |
+| FlexGlue | 0.480 | 0.881 | 0.963 | 0.994 | 0.419 | 0.791 | 0.891 | 0.947 | 0.202 | 0.502 | 0.641 | 0.784 | 1.246 px |
 
-The learned models use LightGlue's own match-score filter
-(`filter_threshold=0.1`); `--ratio` only applies to the classical matchers.
+Match filtering: the classical matchers use the 0.75 ratio test; LightGlue uses
+`filter_threshold=0.1`, FlexGlue uses its own `filter_threshold=0.1`, LoFTR keeps
+the highest-confidence correspondences, and RoMa thresholds certainty at 0.05.
+`--ratio` only affects the classical rows.
 
 [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT MMA@3 / HEA@3 of
 0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their protocol uses tuned
@@ -75,13 +86,20 @@ because the protocols differ in input resize, keypoint budget, RANSAC settings,
 and corner-error definition. Use the measured AUC for relative comparison
 within this harness, not as a reproduction of the published values.
 
-Per split, viewpoint is harder than illumination for homography accuracy:
+Per split, viewpoint is harder than illumination for homography accuracy. The
+gap is largest for RoMa (0.797 → 0.309) and smallest for FlexGlue (0.912 →
+0.675):
 
 | Model | Illumination HEA@3 | Viewpoint HEA@3 |
 |---|---:|---:|
 | SIFT | 0.849 | 0.566 |
 | ORB | 0.670 | 0.393 |
 | AKAZE | 0.719 | 0.458 |
+| SuperPoint + LightGlue | 0.895 | 0.607 |
+| ALIKED + LightGlue | 0.905 | 0.654 |
+| LoFTR | 0.937 | 0.593 |
+| RoMa | 0.797 | 0.309 |
+| FlexGlue | 0.912 | 0.675 |
 
 ## 3. Expected HPatches Results for the Planned Suite
 
@@ -133,6 +151,14 @@ Only metrics that exist on both sides are compared.
 | ALIKED + LightGlue | AUC@3 | 0.662 | 0.505 | −0.157 |
 | ALIKED + LightGlue | AUC@5 | 0.769 | 0.643 | −0.126 |
 | ALIKED + LightGlue | AUC@10 | 0.863 | 0.778 | −0.085 |
+| LoFTR | AUC@1 | 0.415 | 0.269 | −0.146 |
+| LoFTR | AUC@5 | 0.788 | 0.642 | −0.146 |
+| RoMa | AUC@1 | 0.447 | 0.110 | −0.337 |
+| RoMa | AUC@3 | 0.726 | 0.324 | −0.402 |
+| RoMa | AUC@5 | 0.814 | 0.445 | −0.369 |
+| FlexGlue | AUC@3 | 0.729 | 0.502 | −0.227 |
+| FlexGlue | AUC@5 | 0.819 | 0.641 | −0.178 |
+| FlexGlue | AUC@10 | 0.898 | 0.784 | −0.114 |
 
 Observations:
 
@@ -140,23 +166,31 @@ Observations:
   is above them. This is consistent with protocol differences: the paper uses
   tuned ratio thresholds and mutual nearest neighbors, while this harness uses
   a simple ratio test at 0.75 with a 2,048-keypoint budget.
-- Both learned models are below the published AUC values. The gap is largest
-  for SuperPoint + LightGlue at AUC@1 and smallest for ALIKED + LightGlue at
-  AUC@10.
+- SuperPoint + LightGlue and ALIKED + LightGlue are both below the published
+  AUC values; between the two, the gap is largest for SuperPoint + LightGlue at
+  AUC@1 and smallest for ALIKED + LightGlue at AUC@10.
 - The learned models still produce strong MMA/HEA (ALIKED + LightGlue: 0.864 /
   0.778 at 3 px), so the AUC gap is more likely protocol-related than a
   completely broken matcher. Input resize, keypoint budget, RANSAC threshold,
   and corner-error definition all differ from the source papers.
+- LoFTR, RoMa, and FlexGlue are also below their published AUC values, with
+  LoFTR the closest (Δ ≈ −0.15) and RoMa the furthest (Δ ≈ −0.34 to −0.40).
+  RoMa's gap is notable because it has the best MMA@3 of any model (0.937) but
+  only 0.548 HEA@3: its correspondences are accurate, while the homography
+  fitted from 2,048 dense matches is less stable. FlexGlue's gap shrinks with
+  the threshold (−0.227 at 3 px to −0.114 at 10 px), so its main deficit is
+  fine-grained corner accuracy.
 - The measured AUC should be used for relative comparison inside this harness,
   not as a claim that the published AUC was reproduced.
 
 ### 3.2 Expected vs actual — not yet measured
 
+LoFTR, RoMa, and FlexGlue are now implemented and measured, so their
+expected-vs-actual rows moved to [§3.1](#31-expected-vs-actual--implemented-models).
+Only the foundation-embedding baselines remain unmeasured.
+
 | Model | Expected metric | Expected | Status |
 |---|---|---|---|
-| LoFTR | RANSAC AUC@1/5 | 0.415 / 0.788 | not implemented |
-| RoMa | RANSAC AUC@1/3/5 | 0.447 / 0.726 / 0.814 | not implemented |
-| FlexGlue | AUC@3/5/10 | 0.729 / 0.819 / 0.898 | not implemented |
 | DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches result |
 
 ## 4. FlickrLogos-32 Failure Analysis
