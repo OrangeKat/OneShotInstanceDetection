@@ -126,15 +126,20 @@ of them, and each has a different task and annotation format.
 Protocol notes:
 
 - Common protocol: reference crop → query image → predicted box → AP@0.5.
+- CUHK-SYSU: instance-level; the reference is a probe person and queries are
+  gallery images with that person's box.
+- RPC: category-level (no cross-image instance identity); report it separately
+  from instance-level AP.
 - Paris6k: report mAP / recall@k, and project the query ROI through the
   estimated homography for a box IoU.
 - HPatches: matcher validation only; report MMA@1/3/5/10, HEA@1/3/5/10, and
   corner error. Do not report detection AP for it.
 - Do not mix category-level and instance-level AP in one table.
 - Access: FlickrLogos-32 requires an email request (the prep script uses the
-  public OpenLogo mirror); CUHK-SYSU requires a request form; Paris6k original
-  links may be dead; RPC is directly downloadable; HPatches is directly
-  downloadable.
+  public OpenLogo mirror); CUHK-SYSU requires an email request and is not
+  mirrored here, so `make data-cuhk` builds the manifest from the official
+  layout; Paris6k original links may be dead; RPC is mirrored on Hugging Face
+  and `make data-rpc` downloads it; HPatches is directly downloadable.
 
 ## Evaluation
 
@@ -171,6 +176,10 @@ Common targets:
 |---|---|
 | `make sync` | `uv lock && uv sync --all-groups` |
 | `make check` | Ruff lint + format check |
+| `make data-flickr` | FlickrLogos-32 download + manifest |
+| `make data-hpatches` | HPatches download + manifest |
+| `make data-cuhk` | CUHK-SYSU manifest (request the dataset first) |
+| `make data-rpc` | RPC download + category-level manifest |
 | `make bench` | FlickrLogos-32 box benchmark |
 | `make bench-smoke` | 20-sample smoke test |
 | `make hpatches` | HPatches matcher validation |

@@ -12,7 +12,7 @@ HPATCHES_OUTPUT ?= outputs/hpatches
 WEEK ?=
 
 .PHONY: help rocm-wheels sync lint format check gpu \
-	data-flickr data-hpatches \
+	data-flickr data-hpatches data-cuhk data-rpc \
 	bench bench-smoke hpatches \
 	examples analyze all \
 	clean tag-week
@@ -52,6 +52,12 @@ data-flickr: ## Download FlickrLogos-32 and build the manifest
 
 data-hpatches: ## Download HPatches and build the manifest
 	$(PYTHON) scripts/prepare_hpatches.py
+
+data-cuhk: ## Build the CUHK-SYSU manifest (dataset must be requested)
+	$(PYTHON) scripts/prepare_cuhk_sysu.py
+
+data-rpc: ## Download RPC shards and build the category-level manifest
+	$(PYTHON) scripts/prepare_rpc.py
 
 bench: ## Run the FlickrLogos-32 box benchmark
 	$(PYTHON) main.py \

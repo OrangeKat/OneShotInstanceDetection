@@ -46,6 +46,8 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `src/utils/logger.py` | stderr logger |
 | `scripts/prepare_flickrlogos32.py` | FlickrLogos-32 download + manifest |
 | `scripts/prepare_hpatches.py` | HPatches download + box-AP manifest |
+| `scripts/prepare_cuhk_sysu.py` | CUHK-SYSU person-search manifest |
+| `scripts/prepare_rpc.py` | RPC category-level manifest |
 | `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
 | `scripts/analyze_results.py` | failure-analysis plots, CSVs, and report |
 | `scripts/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
@@ -104,6 +106,14 @@ make hpatches MODELS="sift"
 - Metrics: MMA@1/3/5/10, HEA@1/3/5/10, corner error.
 - The report includes a literature reference table and per-split results.
 - No separate validation script: use the same pipeline and `MODELS` registry.
+
+### Other datasets
+
+- CUHK-SYSU is request-only. `make data-cuhk` expects the official layout
+  under `data/cuhk-sysu` (`Image/SSM`,
+  `annotation/test/train_test/TestG50.mat`) and builds probe/gallery pairs.
+- RPC is downloaded from the public Hugging Face mirror by `make data-rpc`.
+  It is category-level, so report it separately from instance-level AP.
 
 ### Examples and failure analysis
 
