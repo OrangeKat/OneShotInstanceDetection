@@ -1,71 +1,74 @@
 # Week 2 Devnotes: HPatches Validation and Failure Analysis
 
-> **Status.** Week 2 integrated native HPatches metrics into the same benchmark
-> and added a failure-analysis pass over the FlickrLogos-32 results.
->
-> **Trace vs development.** §1–§2 and §4 are the initial implementation trace
-> and are kept unchanged. §3.1 is the original expected-vs-actual comparison;
-> [§3.2](#32-reproducing-the-published-hpatches-values-2026-11-09) records the
-> later reproduction work. §5 lists references.
->
-> **Project arc.** Benchmark current solutions → diagnose failure modes → build
-> the final pipeline / full model → publish a full report.
->
-> **References.** Paper, dataset, and software links are inline or in
-> [§5 References](#5-references).
+Week 2 was where the matcher suite finally became a suite. I wired the last
+three models into the same benchmark, ran all eight over HPatches, and then
+spent most of the week trying to explain why the numbers were nowhere near the
+published ones. This is the log of that, in the order it happened. Paper and
+software links are inline or in [§6 References](#6-references).
 
-## 1. What Changed
+**The short version:** the models were mostly fine; my evaluation was not the
+evaluation the papers use. Once I resized images to a 480 px short side and
+measured corner error the way the HPatches benchmarks do, ALIKED + LightGlue
+landed within about 0.02 of its published AUC, and FlexGlue and LoFTR were
+close. RoMa is still off, and I think that one is a sampling problem on my side.
 
-- Added a `--protocol hpatches` mode to `main.py` / `src/pipeline.py`.
-- Kept one model registry (`MODELS`): adding a new matcher automatically makes
-  it available for both the box benchmark and HPatches validation.
-- Added `src/validation/` for HPatches sequence loading, MMA/HEA/corner-error
-  metrics, and the Markdown report.
-- Added `scripts/prepare_hpatches.py` for the sequence download and box-AP
-  manifest.
-- Added SuperPoint + LightGlue and ALIKED + LightGlue, using vendored
-  [LightGlue](https://github.com/cvg/LightGlue) components and the same
-  `FeatureMatcher` interface.
-- Added [LoFTR](https://arxiv.org/abs/2104.00680) via Kornia,
-  [RoMa v1](https://arxiv.org/abs/2305.15404) with vendored inference code, and
-  [FlexGlue](https://arxiv.org/abs/2610.32976) with vendored inference code.
-  The LoFTR and FlexGlue wrappers cap the long image side at 640 px and map
-  keypoints back to the original resolution; unbounded HPatches inputs (up to
-  6.3 MP) would otherwise exhaust memory.
-- The box benchmark now streams samples per model instead of preloading every
-  image, keeping memory bounded on the full five-dataset suite.
-- Added failure analysis over the FlickrLogos-32 results: per-class, logo-size,
-  multi-instance, confidence, and latency breakdowns.
+## 1. What I built
 
-There is no separate validation executable. The command is the benchmark:
+At the start of the week the benchmark had SIFT, ORB, AKAZE, and the two
+LightGlue combinations. I added [LoFTR](https://arxiv.org/abs/2104.00680)
+through Kornia, and vendored the official inference code for
+[RoMa v1](https://arxiv.org/abs/2305.15404) and
+[FlexGlue](https://arxiv.org/abs/2610.32976) under the model directory, with
+the upstream licenses. Vendoring kept the benchmark self-contained and avoided
+pulling in a heavier package for two models.
+
+All eight share the same `FeatureMatcher` interface and the same `MODELS`
+registry, so a new matcher automatically works in both the box benchmark and
+the HPatches run. That decision paid off this week: once a model matched a
+single image pair, I could benchmark it on both protocols without writing new
+plumbing.
+
+Two practical fixes went in along the way:
+
+- The box benchmark used to preload every image and was killed by the OOM
+  killer once the learned models were added. It now streams one sample at a
+  time.
+- LoFTR and FlexGlue needed a cap on the input size. Unbounded HPatches images
+  go up to 6.3 MP, which was enough to take the machine down; both wrappers now
+  cap the long side at 640 px and map keypoints back to the original
+  resolution.
+
+I also added `src/validation/` for HPatches sequence loading, the MMA/HEA/
+corner-error metrics, and the Markdown report, plus
+`scripts/prepare_hpatches.py` for the download. There is no separate
+validation executable; the command is just the benchmark:
 
 ```bash
 make data-hpatches
 make hpatches
 ```
 
-## 2. HPatches Validation
+## 2. The first HPatches run
 
-**Initial implementation trace (2026-11-09).** This is the first complete
-eight-model run. It uses the harness as originally written: native image
-resolution, raw-pixel thresholds, and a fixed 3 px RANSAC threshold. The numbers
-are preserved as-is; the protocol audit and re-measurement are in §3.2.
+I ran the full suite on 2026-11-09 over 116 sequences and 580 reference/target
+pairs, with 2,048 keypoints per image (or correspondences for the dense
+matchers). Classical matchers used a simple 0.75 ratio test, the learned
+matchers used their own score filters, and every homography came from RANSAC
+with a 3 px threshold in the original image coordinates. LoFTR and FlexGlue
+received images with the long side capped at 640 px; the rest ran at native
+resolution.
 
-**Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints
-(or correspondences for dense matchers), RANSAC threshold 3 px. Classical
-matchers use a simple ratio test at 0.75; the learned matchers use their own
-score filters. LoFTR and FlexGlue see images with the long side capped at
-640 px.
+The metrics are the usual HPatches ones:
 
 - **MMA@k**: per-pair fraction of matches within `k` pixels after projecting
-  reference keypoints through the ground-truth homography; averaged over pairs
+  reference keypoints through the ground-truth homography, averaged over pairs
   with at least one match.
 - **HEA@k**: fraction of all pairs whose mean four-corner error is within `k`
   pixels; missing homographies count as failures.
 - **Corner error**: mean Euclidean distance between the four reference corners
   projected by the ground-truth and estimated homographies.
 - **AUC@k**: normalized area under the cumulative corner-error curve up to `k`
-  pixels. Missing homographies count as infinite error.
+  pixels, with missing homographies counted as infinite error.
 
 | Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | AUC@1 | AUC@3 | AUC@5 | AUC@10 | Median CE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -78,27 +81,19 @@ score filters. LoFTR and FlexGlue see images with the long side capped at
 | RoMa | 0.703 | 0.937 | 0.976 | 0.990 | 0.248 | 0.548 | 0.684 | 0.828 | 0.110 | 0.324 | 0.445 | 0.606 | 2.445 px |
 | FlexGlue | 0.480 | 0.881 | 0.963 | 0.994 | 0.419 | 0.791 | 0.891 | 0.947 | 0.203 | 0.502 | 0.641 | 0.784 | 1.246 px |
 
-Match filtering: the classical matchers use the 0.75 ratio test; LightGlue uses
-`filter_threshold=0.1`, FlexGlue uses its own `filter_threshold=0.1`, LoFTR keeps
-the highest-confidence correspondences, and RoMa thresholds certainty at 0.05.
-`--ratio` only affects the classical rows.
+I am keeping this table exactly as it came out of that run. I did not regenerate
+it after the investigation in §4; it is the trace of what the harness measured
+before I understood the protocol.
 
-[Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT MMA@3 / HEA@3 of
-0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their protocol uses tuned
-ratio tests, mutual nearest neighbors, 108 sequences, and
-[OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
-expected. The learned rows are measured under the same MMA/HEA protocol;
-published SuperPoint/ALIKED HPatches numbers use homography AUC, so compare
-within the same metric.
+Match filtering differs by family: the classical matchers use the 0.75 ratio
+test, LightGlue uses `filter_threshold=0.1`, FlexGlue uses its own
+`filter_threshold=0.1`, LoFTR keeps the highest-confidence correspondences, and
+RoMa thresholds certainty at 0.05. `--ratio` only affects the classical rows.
 
-The measured AUC values are lower than the published learned-model AUC numbers
-because the protocols differ in input resize, keypoint budget, RANSAC settings,
-and corner-error definition. Use the measured AUC for relative comparison
-within this harness, not as a reproduction of the published values.
-
-Per split, viewpoint is harder than illumination for homography accuracy. The
-gap is largest for RoMa (0.797 → 0.309) and smallest for FlexGlue (0.912 →
-0.675):
+On the split, viewpoint is harder than illumination for every model, which is
+the pattern the dataset is built to expose. What surprised me was the spread:
+the gap is largest for RoMa (0.797 → 0.309) and smallest for FlexGlue
+(0.912 → 0.675).
 
 | Model | Illumination HEA@3 | Viewpoint HEA@3 |
 |---|---:|---:|
@@ -111,12 +106,11 @@ gap is largest for RoMa (0.797 → 0.309) and smallest for FlexGlue (0.912 →
 | RoMa | 0.797 | 0.309 |
 | FlexGlue | 0.912 | 0.675 |
 
-## 3. Expected HPatches Results for the Planned Suite
+## 3. Comparing against the papers
 
-This table lists published HPatches reference values for the **released base
-models**, with no HPatches fine-tuning. It is a sanity-check target, not one
-leaderboard: protocols differ in keypoint budget, resize, RANSAC vs DLT, and
-error thresholds.
+The obvious next step was to put these numbers next to the published ones. The
+table below is what I used as a reference: released base models, no HPatches
+fine-tuning, each on the metric its paper reports.
 
 | Model | Base weights / tuning | HPatches metric | Published value | Source |
 |---|---|---|---|---|
@@ -129,22 +123,17 @@ error thresholds.
 | RoMa | Official RoMa v1 | RANSAC AUC@1/3/5 px | 44.7 / 72.6 / 81.4 | [MV-RoMa, Table 1](https://arxiv.org/abs/2603.27542) |
 | FlexGlue | Official FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
 
-Notes:
+A few caveats before the comparison. All learned rows use released pretrained
+weights and are not fine-tuned on HPatches. The metric column matters: the
+classical rows use MMA/HEA, while the learned and dense rows use each paper's
+native precision/recall or homography-AUC setup, so values should only be
+compared within a metric. And the classical values use tuned ratio tests,
+mutual nearest neighbors, and 108 sequences, while this harness uses a simple
+0.75 ratio test and all 116 sequences.
 
-- All learned rows use released pretrained weights and are **not fine-tuned on
-  HPatches**.
-- The metric column matters: classical rows use MMA/HEA, while the learned and
-  dense rows use each paper's native precision/recall or homography-AUC setup.
-  Do not compare values across different metrics.
-- The classical values use MMA/HEA at 3 px with tuned ratio tests, mutual
-  nearest neighbors, and 108 sequences. Our harness uses a simple ratio test at
-  0.75 and all 116 sequences, so the classical numbers should be lower.
-
-### 3.1 Expected vs actual — implemented models
-
-Only metrics that exist on both sides are compared. The Δ column mixes source
-protocols and overstates the gap; see
-[§3.2](#32-reproducing-the-published-hpatches-values-2026-11-09) for the audit.
+Restricting to metrics that exist on both sides gives this delta table. It is
+what started the investigation, but it also mixes protocols, so the deltas are
+not a clean reproduction error.
 
 | Model | Metric | Expected | Actual | Δ |
 |---|---|---:|---:|---:|
@@ -168,64 +157,61 @@ protocols and overstates the gap; see
 | FlexGlue | AUC@5 | 0.819 | 0.641 | −0.178 |
 | FlexGlue | AUC@10 | 0.898 | 0.784 | −0.114 |
 
-Observations:
+The classical rows were the first clue. SIFT and AKAZE were slightly below the
+published values, but ORB was above them — with the same harness, the same
+ratio test, and the same keypoint budget. If the harness were simply broken,
+all three should have moved in the same direction. The learned models were also
+still producing strong MMA/HEA (ALIKED + LightGlue hit 0.864 / 0.778 at 3 px)
+while their AUC looked much worse. That combination — good local matches, bad
+corner accuracy — pointed at the metric rather than at eight independent
+implementations being wrong in the same way.
 
-- SIFT and AKAZE are slightly below the published classical values, while ORB
-  is above them. This is consistent with protocol differences: the paper uses
-  tuned ratio thresholds and mutual nearest neighbors, while this harness uses
-  a simple ratio test at 0.75 with a 2,048-keypoint budget.
-- SuperPoint + LightGlue and ALIKED + LightGlue are both below the published
-  AUC values; between the two, the gap is largest for SuperPoint + LightGlue at
-  AUC@1 and smallest for ALIKED + LightGlue at AUC@10.
-- The learned models still produce strong MMA/HEA (ALIKED + LightGlue: 0.864 /
-  0.778 at 3 px), so the AUC gap is more likely protocol-related than a
-  completely broken matcher. Input resize, keypoint budget, RANSAC threshold,
-  and corner-error definition all differ from the source papers.
-- LoFTR, RoMa, and FlexGlue are also below their published AUC values, with
-  LoFTR the closest (Δ ≈ −0.15) and RoMa the furthest (Δ ≈ −0.34 to −0.40).
-  RoMa's gap is notable because it has the best MMA@3 of any model (0.937) but
-  only 0.548 HEA@3: its correspondences are accurate, while the homography
-  fitted from 2,048 dense matches is less stable. FlexGlue's gap shrinks with
-  the threshold (−0.227 at 3 px to −0.114 at 10 px), so its main deficit is
-  fine-grained corner accuracy.
-- The measured AUC should be used for relative comparison inside this harness,
-  not as a claim that the published AUC was reproduced.
+The size of the gap varied too. LoFTR was the closest learned model at roughly
+−0.15 AUC, RoMa the furthest at −0.34 to −0.40, and FlexGlue's gap shrank as
+the threshold grew (−0.227 at 3 px to −0.114 at 10 px), which looked like a
+fine-grained corner-accuracy deficit rather than a matching failure. RoMa was
+the outlier in a different way: it had the best MMA@3 of any model (0.937) but
+only 0.548 HEA@3. Accurate correspondences, unstable homography.
 
-### 3.2 Reproducing the published HPatches values (2026-11-09)
+## 4. Why the numbers were off
 
-Added after the initial trace; §2 stays as the recorded baseline.
+My first instinct was that I had broken something. I checked the coordinate
+frames of the three new wrappers, since that is the easy place to lose a scale
+factor: RoMa returns normalized coordinates, FlexGlue works in a resized
+frame, LoFTR pads its input to a multiple of 8. On single pairs the keypoints
+landed where they should, RoMa matched the largest HPatches image with
+sub-pixel error, and LoFTR and FlexGlue were in the right ballpark. Nothing
+looked fundamentally broken.
 
-**Trigger.** Every learned model landed below its published HPatches AUC by more
-than the expected run-to-run variation.
+So I went and read the evaluation code of the papers and repositories instead
+of only the tables. That is where the answer was.
 
-**Main finding: the evaluation protocol accounts for most of the gap, not the
-matchers.** The official HPatches homography protocol resizes images so the
-**shorter side is 480 px** and reports corner error and the RANSAC inlier
-threshold in that resized space:
+The HPatches homography protocol used by the papers I compare against resizes
+images so the **shorter side is 480 px** and reports corner error and the
+RANSAC inlier threshold in that resized space:
 
-- [LightGlue §5.1](https://arxiv.org/abs/2306.13643): "resize all images such
-  that their smaller dimension is equal to 480 pixels".
+- [LightGlue §5.1](https://arxiv.org/abs/2306.13643) says: "resize all images
+  such that their smaller dimension is equal to 480 pixels".
 - The [RoMa HPatches
   benchmark](https://github.com/Parskatt/RoMa/blob/master/romatch/benchmarks/hpatches_sequences_homog_benchmark.py)
-  divides corner error and the inlier threshold by `min(H, W) / 480`:
+  divides corner error and the inlier threshold by `min(H, W) / 480`, e.g.
   `ransacReprojThreshold = 3 * min(w2, h2) / 480`.
 
-Our initial run keeps native resolution (up to 3,088 × 2,056) and a fixed 3 px
-threshold. On the largest pair, 3 px is ≈ 0.70 px at 480, so an identical
-homography scores much worse here. Two smaller differences:
+My first run kept native resolution, up to 3,088 × 2,056, and used a fixed 3 px
+threshold. On the largest pair, 3 px is about 0.70 px at 480 — the same
+homography is being judged by a much stricter ruler. Two smaller differences
+turned up as well:
 
-- The official benchmark ignores eight sequences, the same list as LoFTR/RoMa:
-  `i_contruction`, `i_crownnight`, `i_dc`, `i_pencils`, `i_whitebuilding`,
-  `v_artisans`, `v_astronautis`, `v_talent`. Our run includes them.
+- The RoMa/LoFTR HPatches benchmark ignores eight sequences
+  (`i_contruction`, `i_crownnight`, `i_dc`, `i_pencils`, `i_whitebuilding`,
+  `v_artisans`, `v_astronautis`, `v_talent`). My run includes them.
 - RoMa's benchmark samples 5,000 matches with certainty-weighted, KDE-balanced
-  sampling. Our wrapper keeps the 2,048 highest-certainty grid points, which
-  cluster spatially. This explains RoMa's MMA@3 = 0.937 with HEA@3 = 0.548: the
-  correspondences are accurate, but the homography is fitted from a biased
-  region.
+  sampling. My wrapper keeps the 2,048 highest-certainty grid points, which
+  cluster spatially.
 
-#### Reanalysis with normalized corner error (no re-run)
-
-Stored per-pair corner errors rescaled by `min(H, W) / 480`:
+Before re-running anything, I took the per-pair corner errors already stored in
+`results.json` and rescaled them by `min(H, W) / 480`. This isolates the metric
+change from any model change.
 
 | Model | AUC@1 raw | AUC@1 norm | AUC@10 raw | AUC@10 norm | AUC@10 norm, 8 ignored |
 |---|---:|---:|---:|---:|---:|
@@ -238,15 +224,16 @@ Stored per-pair corner errors rescaled by `min(H, W) / 480`:
 | RoMa | 0.110 | 0.164 | 0.606 | 0.712 | 0.717 |
 | FlexGlue | 0.203 | 0.293 | 0.784 | 0.857 | 0.856 |
 
-Normalization alone adds 0.07–0.11 AUC@10. Dropping the eight ignored sequences
-moves AUC@10 by at most 0.01, so that is a minor factor.
+Normalization alone adds 0.07–0.11 AUC@10. Dropping the eight ignored
+sequences moves AUC@10 by at most 0.01, so the sequence list is not the story;
+the resolution convention is.
 
-#### Re-run under the published 480 px protocol
-
-Both images resized so the shorter side is 480 px, the ground-truth homography
-scaled by `H' = S_query · H · S_reference⁻¹`, the same 3 px RANSAC threshold now
-in 480-space, and AUC computed on the resized corners. SuperPoint + LightGlue
-uses 1,024 keypoints to match the LightGlue setup; the others keep 2,048.
+That was convincing enough to re-run part of the suite under the actual 480 px
+setup: resize both images so the short side is 480, scale the ground-truth
+homography by `H' = S_query · H · S_reference⁻¹`, keep the 3 px RANSAC
+threshold now in 480-space, and compute AUC on the resized corners.
+SuperPoint + LightGlue used 1,024 keypoints to match the LightGlue setup; the
+others kept 2,048.
 
 | Model | AUC@1 | AUC@3 | AUC@5 | AUC@10 | Published | Δ at matched thresholds |
 |---|---:|---:|---:|---:|---|---:|
@@ -255,38 +242,37 @@ uses 1,024 keypoints to match the LightGlue setup; the others keep 2,048.
 | FlexGlue | 0.325 | 0.657 | 0.772 | 0.875 | 0.729 / 0.819 / 0.898 @3/5/10 | −0.072 / −0.047 / −0.023 |
 | LoFTR | 0.388 | 0.669 | 0.767 | 0.856 | 0.415 @1 / 0.788 @5 | −0.027 / −0.021 |
 
-Reading:
+ALIKED + LightGlue then landed within 0.02 of the FlexGlue paper, so the
+protocol explains almost its whole initial gap. FlexGlue is closest at 10 px
+and furthest at 3 px; its paper also reports a 640 px variant, so my 480 px
+run is not a like-for-like reproduction of it. LoFTR is close under the same
+protocol. SuperPoint + LightGlue remains furthest below at 1 px — [LightGlue
+Table 1](https://arxiv.org/abs/2306.13643) uses MAGSAC++ with per-method tuned
+inlier thresholds, while I used fixed 3 px RANSAC.
 
-- ALIKED + LightGlue lands within 0.02 of the FlexGlue paper, so the protocol
-  explains almost its whole initial gap.
-- FlexGlue is closest at 10 px and furthest at 3 px. Its paper also reports a
-  640 px variant, so our 480 px run is not a like-for-like reproduction.
-- SuperPoint + LightGlue remains furthest below at 1 px. [LightGlue Table
-  1](https://arxiv.org/abs/2306.13643) uses MAGSAC++ with per-method tuned inlier
-  thresholds, while this harness uses fixed 3 px RANSAC.
-- LoFTR is close under the same protocol.
+RoMa is the one I have not re-run yet, and it is still the largest unexplained
+gap: even with normalized error its AUC@5 is 0.548 against 0.814 published.
+The sampling difference is my best explanation. Keeping the 2,048
+highest-certainty points gives a biased, spatially clustered set, which fits
+the rest of the numbers: MMA@3 = 0.937, because the correspondences themselves
+are good, but HEA@3 = 0.548, because the homography is fitted from a
+concentrated region.
 
-**Not yet done.** RoMa has not been rerun with the 480 px protocol and balanced
-sampling. Even with normalized error, its AUC@5 is 0.548 against 0.814
-published, the largest remaining gap, consistent with the sampling issue above.
+Where this leaves the harness:
 
-**Consequence for §3.1.** The expected values come from three different
-protocols (LightGlue Table 1 with MAGSAC++, FlexGlue Table 2, MV-RoMa). The Δ
-column is a rough sanity check, not a reproduction error.
+- Decide whether HPatches should adopt the 480-short-side,
+  normalized-corner-error protocol permanently. If yes, re-run all eight models
+  and treat those as the baseline, keeping §2 as the trace.
+- Re-run RoMa with `sample(..., 5000)` balanced sampling and a normalized
+  RANSAC threshold.
+- Keep recording later harness or model changes here rather than rewriting the
+  first-run tables.
 
-**Next actions.**
+## 5. FlickrLogos-32 failure analysis
 
-- Decide whether the HPatches harness should adopt the 480-short-side,
-  normalized-corner-error protocol. If yes, rerun all eight models and report
-  those as the baseline, keeping §2 as the trace.
-- Rerun RoMa with `sample(..., 5000)` balanced sampling and a normalized RANSAC
-  threshold.
-- Record each later harness or model change as a dated entry under §3.2.
-
-## 4. FlickrLogos-32 Failure Analysis
-
-The failure analysis splits every pair into hit, wrong box, no prediction,
-false positive, or true negative.
+I also kept the failure analysis over the FlickrLogos-32 box results. It splits
+every pair into hit, wrong box, no prediction, false positive, or true
+negative.
 
 | Model | Hit | Wrong box | No prediction | False positive |
 |---|---:|---:|---:|---:|
@@ -294,17 +280,20 @@ false positive, or true negative.
 | ORB | 18.8% | 26.2% | 42.3% | 3.8% |
 | AKAZE | 20.8% | 15.7% | 50.8% | 0.4% |
 
-- SIFT fails most often with a wrong box: it finds the class but locks onto the
-  wrong instance or background.
-- ORB and AKAZE fail mostly by producing no prediction.
-- Small logos are the main weakness. Below 1% of the query image, SIFT hits
-  0.218 while ORB and AKAZE hit 0.000. At 5% or more, the rates are 0.460,
-  0.292, and 0.326.
-- Multi-instance queries are harder: SIFT 0.430 → 0.358, ORB 0.237 → 0.143,
-  AKAZE 0.261 → 0.163 (single → multi).
-- Worst SIFT classes include `apple`, `carlsberg`, `nvidia`, `pepsi`, `shell`.
+The patterns are fairly clear. SIFT fails most often with a wrong box: it finds
+the class but locks onto the wrong instance or the background. ORB and AKAZE
+fail mostly by producing no prediction at all. Small logos are the main
+weakness — below 1% of the query image, SIFT hits 0.218 while ORB and AKAZE hit
+0.000; at 5% or more the rates are 0.460, 0.292, and 0.326. Multi-instance
+queries are harder for every model: SIFT drops from 0.430 to 0.358, ORB from
+0.237 to 0.143, and AKAZE from 0.261 to 0.163 (single → multi). The worst SIFT
+classes are `apple`, `carlsberg`, `nvidia`, `pepsi`, and `shell`.
 
-## 5. References
+One caveat: this covers SIFT, ORB, and AKAZE only. The run that added the
+learned matchers was OOM-killed and I have not repeated it with the streaming
+fix, so the failure modes above are classical-only for now.
+
+## 6. References
 
 - Week 1 design and bibliography:
   [week1-devnotes.md](week1-devnotes.md)
