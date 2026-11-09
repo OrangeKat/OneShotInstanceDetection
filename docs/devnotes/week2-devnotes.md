@@ -3,15 +3,16 @@
 > **Status.** Week 2 integrated native HPatches metrics into the same benchmark
 > and added a failure-analysis pass over the FlickrLogos-32 results.
 >
-> **Trace vs development.** §1–§4 are the initial implementation trace and are
-> kept unchanged. Later work is appended to the
-> [§5 development log](#5-development-log); §6 lists references.
+> **Trace vs development.** §1–§2 and §4 are the initial implementation trace
+> and are kept unchanged. §3.1–§3.2 are the original expected-vs-actual
+> comparison; [§3.3](#33-reproducing-the-published-hpatches-values-2026-11-09)
+> records the later reproduction work. §5 lists references.
 >
 > **Project arc.** Benchmark current solutions → diagnose failure modes → build
 > the final pipeline / full model → publish a full report.
 >
 > **References.** Paper, dataset, and software links are inline or in
-> [§6 References](#6-references).
+> [§5 References](#5-references).
 
 ## 1. What Changed
 
@@ -48,7 +49,7 @@ make hpatches
 **Initial implementation trace (2026-11-09).** This is the first complete
 eight-model run. It uses the harness as originally written: native image
 resolution, raw-pixel thresholds, and a fixed 3 px RANSAC threshold. The numbers
-are preserved as-is; the protocol audit and re-measurement are in §5.
+are preserved as-is; the protocol audit and re-measurement are in §3.3.
 
 **Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints
 (or correspondences for dense matchers), RANSAC threshold 3 px. Classical
@@ -146,7 +147,8 @@ Notes:
 ### 3.1 Expected vs actual — implemented models
 
 Only metrics that exist on both sides are compared. The Δ column mixes source
-protocols and overstates the gap; see [§5](#5-development-log) for the audit.
+protocols and overstates the gap; see
+[§3.3](#33-reproducing-the-published-hpatches-values-2026-11-09) for the audit.
 
 | Model | Metric | Expected | Actual | Δ |
 |---|---|---:|---:|---:|
@@ -203,53 +205,9 @@ Only the foundation-embedding baselines remain unmeasured.
 |---|---|---|---|
 | DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches result |
 
-## 4. FlickrLogos-32 Failure Analysis
+### 3.3 Reproducing the published HPatches values (2026-11-09)
 
-The failure analysis splits every pair into hit, wrong box, no prediction,
-false positive, or true negative.
-
-| Model | Hit | Wrong box | No prediction | False positive |
-|---|---:|---:|---:|---:|
-| SIFT | 36.1% | 28.0% | 23.2% | 3.7% |
-| ORB | 18.8% | 26.2% | 42.3% | 3.8% |
-| AKAZE | 20.8% | 15.7% | 50.8% | 0.4% |
-
-- SIFT fails most often with a wrong box: it finds the class but locks onto the
-  wrong instance or background.
-- ORB and AKAZE fail mostly by producing no prediction.
-- Small logos are the main weakness. Below 1% of the query image, SIFT hits
-  0.218 while ORB and AKAZE hit 0.000. At 5% or more, the rates are 0.460,
-  0.292, and 0.326.
-- Multi-instance queries are harder: SIFT 0.430 → 0.358, ORB 0.237 → 0.143,
-  AKAZE 0.261 → 0.163 (single → multi).
-- Worst SIFT classes include `apple`, `carlsberg`, `nvidia`, `pepsi`, `shell`.
-
-## 5. Development log
-
-Entries are appended after the initial trace. §1–§4 are not rewritten.
-
-### 2026-11-09 — what §4 covers, and what it does not
-
-- The failure analysis comes from the only complete box run: SIFT, ORB, and
-  AKAZE over 2,528 pairs.
-- The follow-up run that added SuperPoint + LightGlue and ALIKED + LightGlue was
-  killed with exit 137 (OOM) during the ALIKED + LightGlue pass. The box loop now
-  streams one sample at a time, but the full run has not been repeated.
-- LoFTR, RoMa v1, and FlexGlue were added after that, so §4 currently covers no
-  learned matcher.
-- What §4 does establish: small logos dominate the failures (below 1% of the
-  query, SIFT hits 0.218 and ORB/AKAZE 0.000); multi-instance queries lower every
-  hit rate; SIFT mostly returns a wrong box, while ORB and AKAZE mostly return
-  nothing.
-- Open measurement: rerun the box protocol for all matchers, then `make analyze`
-  and `make examples`, so §4 and the analysis outputs cover the full suite.
-- Candidate fixes if the learned rows show the same failures: multi-scale
-  matching or higher-resolution inputs for small logos; proposal-verify or
-  sequential RANSAC for multi-instance queries.
-- Use the resulting failure modes to choose the final pipeline, then write the
-  final report.
-
-### 2026-11-09 — why the HPatches AUC is below the published values
+Added after the initial trace; §2 stays as the recorded baseline.
 
 **Trigger.** Every learned model landed below its published HPatches AUC by more
 than the expected run-to-run variation.
@@ -337,9 +295,30 @@ column is a rough sanity check, not a reproduction error.
   those as the baseline, keeping §2 as the trace.
 - Rerun RoMa with `sample(..., 5000)` balanced sampling and a normalized RANSAC
   threshold.
-- Record each later harness or model change as a dated entry here.
+- Record each later harness or model change as a dated entry under §3.3.
 
-## 6. References
+## 4. FlickrLogos-32 Failure Analysis
+
+The failure analysis splits every pair into hit, wrong box, no prediction,
+false positive, or true negative.
+
+| Model | Hit | Wrong box | No prediction | False positive |
+|---|---:|---:|---:|---:|
+| SIFT | 36.1% | 28.0% | 23.2% | 3.7% |
+| ORB | 18.8% | 26.2% | 42.3% | 3.8% |
+| AKAZE | 20.8% | 15.7% | 50.8% | 0.4% |
+
+- SIFT fails most often with a wrong box: it finds the class but locks onto the
+  wrong instance or background.
+- ORB and AKAZE fail mostly by producing no prediction.
+- Small logos are the main weakness. Below 1% of the query image, SIFT hits
+  0.218 while ORB and AKAZE hit 0.000. At 5% or more, the rates are 0.460,
+  0.292, and 0.326.
+- Multi-instance queries are harder: SIFT 0.430 → 0.358, ORB 0.237 → 0.143,
+  AKAZE 0.261 → 0.163 (single → multi).
+- Worst SIFT classes include `apple`, `carlsberg`, `nvidia`, `pepsi`, `shell`.
+
+## 5. References
 
 - Week 1 design and bibliography:
   [week1-devnotes.md](week1-devnotes.md)
