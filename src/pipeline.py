@@ -5,6 +5,8 @@ Usage:
         --models sift orb akaze --output outputs/flickrlogos32
     uv run python -m src.pipeline --protocol hpatches \\
         --models sift orb akaze --output outputs/hpatches
+    uv run python -m src.pipeline --protocol retrieval \\
+        --models sift orb akaze --output outputs/paris6k
 """
 
 from __future__ import annotations
@@ -35,8 +37,12 @@ from src.models.feature_matching import (
 from src.models.feature_matching.base import FeatureMatcher, MatchResult
 from src.utils.dataset import Box, InstanceDataset, InstanceSample
 from src.utils.logger import get_logger
-from src.validation.hpatches import evaluate_model, load_pairs
+from src.validation.hpatches import evaluate_model as evaluate_hpatches
+from src.validation.hpatches import load_pairs
 from src.validation.report import render_report
+from src.validation.retrieval import evaluate_model as evaluate_retrieval
+from src.validation.retrieval import load_queries
+from src.validation.retrieval_report import render_retrieval_report
 
 __all__ = ["main"]
 
@@ -468,6 +474,31 @@ def write_hpatches_reports(
     return json_path, markdown_path
 
 
+def write_retrieval_reports(
+    reports: Sequence[dict[str, object]],
+    config: dict[str, object],
+    output: Path,
+) -> tuple[Path, Path]:
+    """Write retrieval JSON and Markdown reports.
+
+    Args:
+        reports: Per-model retrieval metrics.
+        config: Run configuration.
+        output: Output directory.
+
+    Returns:
+        The JSON and Markdown paths.
+    """
+    output.mkdir(parents=True, exist_ok=True)
+    json_path = output / "results.json"
+    json_path.write_text(
+        json.dumps({"config": config, "models": reports}, indent=2) + "\n"
+    )
+    markdown_path = output / "results.md"
+    markdown_path.write_text(render_retrieval_report(reports, config))
+    return json_path, markdown_path
+
+
 def _markdown(
     reports: Sequence[dict[str, object]],
     config: dict[str, object],
@@ -522,9 +553,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--protocol",
-        choices=["box", "hpatches"],
+        choices=["box", "hpatches", "retrieval"],
         default="box",
-        help="Benchmark protocol: box AP or native HPatches metrics.",
+        help=(
+            "Benchmark protocol: box AP, native HPatches metrics, or Paris6k retrieval."
+        ),
     )
     parser.add_argument(
         "--manifest",
@@ -537,6 +570,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=Path("data/hpatches"),
         help="Directory containing hpatches-sequences-release.",
+    )
+    parser.add_argument(
+        "--paris-dir",
+        type=Path,
+        default=Path("data/paris6k"),
+        help="Directory containing the Paris6k manifest and images.",
     )
     parser.add_argument(
         "--models",
@@ -554,7 +593,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-samples",
         type=int,
-        help="Limit samples (box) or pairs (HPatches).",
+        help="Limit samples (box), pairs (HPatches), or queries (retrieval).",
     )
     parser.add_argument(
         "--iou-threshold",
@@ -631,6 +670,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.protocol == "hpatches":
         reports, config = _run_hpatches(args, names, log)
         json_path, markdown_path = write_hpatches_reports(reports, config, args.output)
+    elif args.protocol == "retrieval":
+        reports, config = _run_retrieval(args, names, log)
+        json_path, markdown_path = write_retrieval_reports(reports, config, args.output)
     else:
         if args.manifest is None:
             raise SystemExit("error: --manifest is required for the box protocol")
@@ -751,7 +793,7 @@ def _run_hpatches(
         _reset_gpu_peak()
         try:
             matcher = _make_matcher(name, args)
-            report = evaluate_model(matcher, pairs)
+            report = evaluate_hpatches(matcher, pairs)
             report.update(_gpu_memory_stats())
             reports.append(report)
             log.info(
@@ -760,6 +802,73 @@ def _run_hpatches(
                 report["mma"]["3"],
                 report["hea"]["3"],
                 report["corner_error"]["median"],
+                report.get("peak_gpu_mib", 0.0),
+            )
+        except torch.OutOfMemoryError as error:
+            log.error(
+                "%s: skipped, GPU out of memory: %s",
+                name,
+                str(error).splitlines()[0],
+            )
+        finally:
+            matcher = None
+            _release_gpu()
+    return reports, config
+
+
+def _run_retrieval(
+    args: argparse.Namespace,
+    names: Sequence[str],
+    log: Logger,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Run Paris6k retrieval evaluation.
+
+    Args:
+        args: Parsed arguments.
+        names: Model names.
+        log: Logger.
+
+    Returns:
+        Reports and config.
+    """
+    manifest = args.paris_dir / "manifest.json"
+    if not manifest.exists():
+        raise SystemExit(
+            f"missing Paris6k manifest: {manifest}\n"
+            "run: uv run python scripts/prepare_paris6k.py"
+        )
+    queries = load_queries(manifest, limit=args.max_samples)
+    if not queries:
+        raise SystemExit(f"no Paris6k queries found in {manifest}")
+
+    candidate_counts = [len(query.candidates) for query in queries]
+    config: dict[str, object] = {
+        "protocol": "retrieval",
+        "manifest": str(manifest),
+        "queries": len(queries),
+        "min_candidates": min(candidate_counts),
+        "max_candidates": max(candidate_counts),
+        "models": list(names),
+        "max_keypoints": args.max_keypoints,
+        "ratio": args.ratio,
+        "ransac_threshold": args.ransac_threshold,
+        "max_side": args.max_side,
+    }
+    reports: list[dict[str, object]] = []
+    for name in names:
+        matcher: FeatureMatcher | None = None
+        _reset_gpu_peak()
+        try:
+            matcher = _make_matcher(name, args)
+            report = evaluate_retrieval(matcher, queries)
+            report.update(_gpu_memory_stats())
+            reports.append(report)
+            log.info(
+                "%s: mAP=%s R@1=%s R@5=%s peak=%.0fMiB",
+                name,
+                report["map"],
+                report["recall"]["1"],
+                report["recall"]["5"],
                 report.get("peak_gpu_mib", 0.0),
             )
         except torch.OutOfMemoryError as error:

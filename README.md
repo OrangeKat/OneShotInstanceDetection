@@ -130,16 +130,20 @@ Protocol notes:
   gallery images with that person's box.
 - RPC: category-level (no cross-image instance identity); report it separately
   from instance-level AP.
-- Paris6k: report mAP / recall@k, and project the query ROI through the
-  estimated homography for a box IoU.
+- Paris6k: retrieval; rank candidate database images per query ROI and report
+  mAP / recall@1/5/10. Database images have no detection boxes, so box AP is not
+  reported; candidates are the easy/hard positives plus sampled negatives.
+  A full eight-model pass is expensive (~300 candidates per query), so start
+  with `make paris MODELS="sift"`.
 - HPatches: matcher validation only; report MMA@1/3/5/10, HEA@1/3/5/10, and
   corner error. Do not report detection AP for it.
 - Do not mix category-level and instance-level AP in one table.
 - Access: FlickrLogos-32 requires an email request (the prep script uses the
   public OpenLogo mirror); CUHK-SYSU requires an email request and is not
   mirrored here, so `make data-cuhk` builds the manifest from the official
-  layout; Paris6k original links may be dead; RPC is mirrored on Hugging Face
-  and `make data-rpc` downloads it; HPatches is directly downloadable.
+  layout; Paris6k images come from the revisitop archives and `make data-paris`
+  downloads them; RPC is mirrored on Hugging Face and `make data-rpc`
+  downloads it; HPatches is directly downloadable.
 
 ## Evaluation
 
@@ -180,9 +184,11 @@ Common targets:
 | `make data-hpatches` | HPatches download + manifest |
 | `make data-cuhk` | CUHK-SYSU manifest (request the dataset first) |
 | `make data-rpc` | RPC download + category-level manifest |
+| `make data-paris` | Paris6k download + retrieval manifest |
 | `make bench` | FlickrLogos-32 box benchmark |
 | `make bench-smoke` | 20-sample smoke test |
 | `make hpatches` | HPatches matcher validation |
+| `make paris` | Paris6k retrieval evaluation |
 | `make examples` | annotated prediction examples |
 | `make analyze` | failure-analysis plots and report |
 | `make clean` | remove local caches |
@@ -193,22 +199,24 @@ Override variables for a run, for example:
 ```bash
 make bench MODELS="sift"
 make hpatches MODELS="sift orb"
+make paris MODELS="sift orb"
 make bench MANIFEST=path/to/manifest.json OUTPUT=outputs/custom
 ```
 
-`make bench` and `make hpatches` default to all eight implemented models. Use
-`MODELS="..."` for a faster subset. Run `main.py` directly for flags not
-exposed by the Makefile.
+`make bench`, `make hpatches`, and `make paris` default to all eight
+implemented models. Use `MODELS="..."` for a faster subset. Run `main.py`
+directly for flags not exposed by the Makefile.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--protocol` | `box` | `box` (AP@0.5) or `hpatches` (MMA/HEA/corner error) |
+| `--protocol` | `box` | `box` (AP@0.5), `hpatches` (MMA/HEA/corner error), or `retrieval` (Paris6k mAP/recall) |
 | `--manifest` | required for `box` | JSON or JSONL reference/query manifest |
 | `--root` | manifest directory | base directory for relative paths |
 | `--hpatches-dir` | `data/hpatches` | directory containing `hpatches-sequences-release` |
+| `--paris-dir` | `data/paris6k` | directory containing the Paris6k manifest and images |
 | `--models` | `all` | `sift`, `orb`, `akaze`, `superpoint_lightglue`, `aliked_lightglue`, `loftr`, `roma`, `flexglue`, `all` |
 | `--output` | `outputs/benchmark` | directory for `results.json` and `results.md` |
-| `--max-samples` | all | limit samples (box) or pairs (HPatches) |
+| `--max-samples` | all | limit samples (box), pairs (HPatches), or queries (retrieval) |
 | `--iou-threshold` | `0.5` | IoU threshold for a box hit |
 | `--ransac-threshold` | `3.0` | RANSAC reprojection threshold in pixels |
 | `--max-keypoints` | `2048` | keypoint budget per image |

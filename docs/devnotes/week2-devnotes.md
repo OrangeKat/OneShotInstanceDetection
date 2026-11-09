@@ -49,6 +49,11 @@ make data-hpatches
 make hpatches
 ```
 
+On the dataset side, I also wired the remaining allowed datasets: CUHK-SYSU
+probe/gallery pairs, RPC category-level pairs, and a Paris6k retrieval manifest
+with a new `--protocol retrieval` (mAP / recall@k). Paris6k is retrieval-only
+because its database images have no detection boxes.
+
 ## 2. The first HPatches run
 
 I ran the full suite on 2026-11-09 over 116 sequences and 580 reference/target

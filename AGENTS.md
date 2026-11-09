@@ -48,6 +48,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/prepare_hpatches.py` | HPatches download + box-AP manifest |
 | `scripts/prepare_cuhk_sysu.py` | CUHK-SYSU person-search manifest |
 | `scripts/prepare_rpc.py` | RPC category-level manifest |
+| `scripts/prepare_paris6k.py` | Paris6k retrieval manifest |
 | `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
 | `scripts/analyze_results.py` | failure-analysis plots, CSVs, and report |
 | `scripts/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
@@ -114,6 +115,9 @@ make hpatches MODELS="sift"
   `annotation/test/train_test/TestG50.mat`) and builds probe/gallery pairs.
 - RPC is downloaded from the public Hugging Face mirror by `make data-rpc`.
   It is category-level, so report it separately from instance-level AP.
+- Paris6k is retrieval-only: `make data-paris` downloads the revisitop images
+  and ground truth, and `make paris` runs
+  `--protocol retrieval` (mAP / recall@k). Do not report box AP for it.
 
 ### Examples and failure analysis
 
