@@ -3,15 +3,15 @@
 > **Status.** Week 2 integrated native HPatches metrics into the same benchmark
 > and added a failure-analysis pass over the FlickrLogos-32 results.
 >
-> **Trace vs development.** §1–§5 are the initial implementation trace and are
+> **Trace vs development.** §1–§4 are the initial implementation trace and are
 > kept unchanged. Later work is appended to the
-> [§6 development log](#6-development-log); §7 lists references.
+> [§5 development log](#5-development-log); §6 lists references.
 >
 > **Project arc.** Benchmark current solutions → diagnose failure modes → build
 > the final pipeline / full model → publish a full report.
 >
 > **References.** Paper, dataset, and software links are inline or in
-> [§7 References](#7-references).
+> [§6 References](#6-references).
 
 ## 1. What Changed
 
@@ -48,7 +48,7 @@ make hpatches
 **Initial implementation trace (2026-11-09).** This is the first complete
 eight-model run. It uses the harness as originally written: native image
 resolution, raw-pixel thresholds, and a fixed 3 px RANSAC threshold. The numbers
-are preserved as-is; the protocol audit and re-measurement are in §6.
+are preserved as-is; the protocol audit and re-measurement are in §5.
 
 **Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints
 (or correspondences for dense matchers), RANSAC threshold 3 px. Classical
@@ -146,7 +146,7 @@ Notes:
 ### 3.1 Expected vs actual — implemented models
 
 Only metrics that exist on both sides are compared. The Δ column mixes source
-protocols and overstates the gap; see [§6](#6-development-log) for the audit.
+protocols and overstates the gap; see [§5](#5-development-log) for the audit.
 
 | Model | Metric | Expected | Actual | Δ |
 |---|---|---:|---:|---:|
@@ -224,21 +224,32 @@ false positive, or true negative.
   AKAZE 0.261 → 0.163 (single → multi).
 - Worst SIFT classes include `apple`, `carlsberg`, `nvidia`, `pepsi`, `shell`.
 
-## 5. Next Steps
+## 5. Development log
 
-- Add the next model to `MODELS` and run both protocols; no new benchmark code
-  should be needed.
-- Improve small-logo handling: multi-scale matching, higher-resolution inputs,
-  or a proposal/verification stage.
-- Handle multi-instance queries with sequential RANSAC or proposal-verify.
-- Use the failure analysis to choose the final pipeline, then write the final
-  report.
+Entries are appended after the initial trace. §1–§4 are not rewritten.
 
-## 6. Development log
+### 2026-11-09 — what §4 covers, and what it does not
 
-Entries are appended after the initial trace. Earlier sections are not rewritten.
+- The failure analysis comes from the only complete box run: SIFT, ORB, and
+  AKAZE over 2,528 pairs.
+- The follow-up run that added SuperPoint + LightGlue and ALIKED + LightGlue was
+  killed with exit 137 (OOM) during the ALIKED + LightGlue pass. The box loop now
+  streams one sample at a time, but the full run has not been repeated.
+- LoFTR, RoMa v1, and FlexGlue were added after that, so §4 currently covers no
+  learned matcher.
+- What §4 does establish: small logos dominate the failures (below 1% of the
+  query, SIFT hits 0.218 and ORB/AKAZE 0.000); multi-instance queries lower every
+  hit rate; SIFT mostly returns a wrong box, while ORB and AKAZE mostly return
+  nothing.
+- Open measurement: rerun the box protocol for all matchers, then `make analyze`
+  and `make examples`, so §4 and the analysis outputs cover the full suite.
+- Candidate fixes if the learned rows show the same failures: multi-scale
+  matching or higher-resolution inputs for small logos; proposal-verify or
+  sequential RANSAC for multi-instance queries.
+- Use the resulting failure modes to choose the final pipeline, then write the
+  final report.
 
-### 2026-11-09 — why the measured AUC is below the published values
+### 2026-11-09 — why the HPatches AUC is below the published values
 
 **Trigger.** Every learned model landed below its published HPatches AUC by more
 than the expected run-to-run variation.
@@ -328,7 +339,7 @@ column is a rough sanity check, not a reproduction error.
   threshold.
 - Record each later harness or model change as a dated entry here.
 
-## 7. References
+## 6. References
 
 - Week 1 design and bibliography:
   [week1-devnotes.md](week1-devnotes.md)
