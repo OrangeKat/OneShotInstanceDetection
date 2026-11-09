@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -19,6 +20,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
 
 from src.models.feature_matching import (
     AKAZEMatcher,
@@ -48,6 +50,63 @@ MODELS: dict[str, type[FeatureMatcher]] = {
     "roma": RoMaMatcher,
     "flexglue": FlexGlueMatcher,
 }
+
+
+def _configure_gpu(fraction: float, log: Logger) -> None:
+    """Cap this process's GPU memory so a runaway model cannot hang the driver.
+
+    Args:
+        fraction: Requested share of total VRAM, or ``0`` to auto-size from
+            the currently free memory.
+        log: Logger.
+    """
+    if not torch.cuda.is_available():
+        return
+    total = torch.cuda.get_device_properties(0).total_memory
+    free, _ = torch.cuda.mem_get_info()
+    if fraction > 0:
+        budget = min(fraction * total, 0.9 * free)
+    else:
+        budget = min(0.9 * total, 0.9 * free)
+    budget = min(max(budget, 512 * 1024**2), total)
+    torch.cuda.set_per_process_memory_fraction(budget / total, 0)
+    log.info(
+        "GPU memory budget: %.1f GiB (%.1f GiB free of %.1f GiB)",
+        budget / 1024**3,
+        free / 1024**3,
+        total / 1024**3,
+    )
+    if free < 2 * 1024**3:
+        log.warning(
+            "less than 2 GiB of GPU memory is free; close other GPU apps or "
+            "lower --max-side"
+        )
+
+
+def _release_gpu() -> None:
+    """Drop model references and return cached blocks to the driver."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def _reset_gpu_peak() -> None:
+    """Reset the GPU peak-memory counters used in reports."""
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+
+def _gpu_memory_stats() -> dict[str, float]:
+    """Return peak GPU memory for the current model, in MiB."""
+    if not torch.cuda.is_available():
+        return {}
+    return {
+        "peak_gpu_mib": round(torch.cuda.max_memory_allocated() / 1024**2, 1),
+        "peak_gpu_reserved_mib": round(
+            torch.cuda.max_memory_reserved() / 1024**2,
+            1,
+        ),
+    }
 
 
 @dataclass
@@ -429,6 +488,7 @@ def _markdown(
         f"- Samples: `{config['samples']}`",
         f"- IoU threshold: `{config['iou_threshold']}`",
         f"- Max keypoints: `{config['max_keypoints']}`",
+        f"- Max side: `{config.get('max_side', '-')}`",
         f"- Ratio: `{config['ratio']}`",
         f"- RANSAC threshold: `{config['ransac_threshold']}`",
         "",
@@ -515,6 +575,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Keypoint budget per image.",
     )
     parser.add_argument("--ratio", type=float, default=0.75, help="Lowe ratio.")
+    parser.add_argument(
+        "--max-side",
+        type=int,
+        default=640,
+        help=(
+            "Longest image side fed to the dense matchers (LoFTR, FlexGlue); "
+            "larger images are downscaled and keypoints mapped back."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-mem-fraction",
+        type=float,
+        default=0.0,
+        help=(
+            "Cap this process to a fraction of total VRAM; 0 auto-sizes from "
+            "currently free memory."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -548,6 +626,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     log = get_logger(__name__)
     names = _selected_models(args.models)
+    _configure_gpu(args.gpu_mem_fraction, log)
 
     if args.protocol == "hpatches":
         reports, config = _run_hpatches(args, names, log)
@@ -592,25 +671,41 @@ def _run_box(
         "max_keypoints": args.max_keypoints,
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
+        "max_side": args.max_side,
     }
     reports: list[dict[str, object]] = []
     for name in names:
-        report = run_benchmark(
-            _make_matcher(name, args),
-            samples,
-            args.iou_threshold,
-            loader=dataset.load,
-        )
-        reports.append(report)
-        latency = report["latency_ms"]
-        log.info(
-            "%s: hit=%.3f ap50=%.3f iou=%.3f p50=%.1fms",
-            name,
-            report["hit_rate"],
-            report["ap50"],
-            report["mean_iou"],
-            latency["p50"],
-        )
+        matcher: FeatureMatcher | None = None
+        _reset_gpu_peak()
+        try:
+            matcher = _make_matcher(name, args)
+            report = run_benchmark(
+                matcher,
+                samples,
+                args.iou_threshold,
+                loader=dataset.load,
+            )
+            report.update(_gpu_memory_stats())
+            reports.append(report)
+            latency = report["latency_ms"]
+            log.info(
+                "%s: hit=%.3f ap50=%.3f iou=%.3f p50=%.1fms peak=%.0fMiB",
+                name,
+                report["hit_rate"],
+                report["ap50"],
+                report["mean_iou"],
+                latency["p50"],
+                report.get("peak_gpu_mib", 0.0),
+            )
+        except torch.OutOfMemoryError as error:
+            log.error(
+                "%s: skipped, GPU out of memory: %s",
+                name,
+                str(error).splitlines()[0],
+            )
+        finally:
+            matcher = None
+            _release_gpu()
     return reports, config
 
 
@@ -648,18 +743,34 @@ def _run_hpatches(
         "max_keypoints": args.max_keypoints,
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
+        "max_side": args.max_side,
     }
     reports: list[dict[str, object]] = []
     for name in names:
-        report = evaluate_model(_make_matcher(name, args), pairs)
-        reports.append(report)
-        log.info(
-            "%s: MMA@3=%s HEA@3=%s median_CE=%s",
-            name,
-            report["mma"]["3"],
-            report["hea"]["3"],
-            report["corner_error"]["median"],
-        )
+        matcher: FeatureMatcher | None = None
+        _reset_gpu_peak()
+        try:
+            matcher = _make_matcher(name, args)
+            report = evaluate_model(matcher, pairs)
+            report.update(_gpu_memory_stats())
+            reports.append(report)
+            log.info(
+                "%s: MMA@3=%s HEA@3=%s median_CE=%s peak=%.0fMiB",
+                name,
+                report["mma"]["3"],
+                report["hea"]["3"],
+                report["corner_error"]["median"],
+                report.get("peak_gpu_mib", 0.0),
+            )
+        except torch.OutOfMemoryError as error:
+            log.error(
+                "%s: skipped, GPU out of memory: %s",
+                name,
+                str(error).splitlines()[0],
+            )
+        finally:
+            matcher = None
+            _release_gpu()
     return reports, config
 
 
@@ -673,11 +784,14 @@ def _make_matcher(name: str, args: argparse.Namespace) -> FeatureMatcher:
     Returns:
         A configured matcher.
     """
-    return MODELS[name](
-        max_keypoints=args.max_keypoints,
-        ratio=args.ratio,
-        ransac_threshold=args.ransac_threshold,
-    )
+    kwargs: dict[str, object] = {
+        "max_keypoints": args.max_keypoints,
+        "ratio": args.ratio,
+        "ransac_threshold": args.ransac_threshold,
+    }
+    if name in {"loftr", "flexglue"}:
+        kwargs["max_side"] = args.max_side
+    return MODELS[name](**kwargs)
 
 
 if __name__ == "__main__":

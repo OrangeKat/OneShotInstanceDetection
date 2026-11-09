@@ -4,6 +4,8 @@ SHELL := /bin/bash
 PYTHON ?= uv run python
 RUFF ?= uv run ruff
 MODELS ?= sift orb akaze superpoint_lightglue aliked_lightglue loftr roma flexglue
+MAX_SIDE ?= 640
+GPU_MEM_FRACTION ?= 0
 MANIFEST ?= data/flickrlogos32/manifest.json
 OUTPUT ?= outputs/flickrlogos32
 HPATCHES_OUTPUT ?= outputs/hpatches
@@ -55,6 +57,8 @@ bench: ## Run the FlickrLogos-32 box benchmark
 	$(PYTHON) main.py \
 		--manifest $(MANIFEST) \
 		--models $(MODELS) \
+		--max-side $(MAX_SIDE) \
+		--gpu-mem-fraction $(GPU_MEM_FRACTION) \
 		--output $(OUTPUT)
 
 bench-smoke: ## Run a 20-sample box smoke test
@@ -62,12 +66,16 @@ bench-smoke: ## Run a 20-sample box smoke test
 		--manifest $(MANIFEST) \
 		--models $(MODELS) \
 		--max-samples 20 \
+		--max-side $(MAX_SIDE) \
+		--gpu-mem-fraction $(GPU_MEM_FRACTION) \
 		--output $(OUTPUT)-smoke
 
 hpatches: ## Run HPatches matcher validation
 	$(PYTHON) main.py \
 		--protocol hpatches \
 		--models $(MODELS) \
+		--max-side $(MAX_SIDE) \
+		--gpu-mem-fraction $(GPU_MEM_FRACTION) \
 		--output $(HPATCHES_OUTPUT)
 
 examples: ## Render good, bad, and false-positive examples

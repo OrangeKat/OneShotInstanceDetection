@@ -138,15 +138,16 @@ Protocol notes:
 ## Evaluation
 
 The current harness records accuracy, speed, and match diagnostics, and writes
-JSON plus Markdown. Size and memory accounting are planned.
+JSON plus Markdown. Peak GPU memory per model is included in `results.json`.
 
 | Axis | Recorded now |
 |---|---|
 | Accuracy | box protocol: hit rate at IoU@0.5, 11-point AP@0.5, mean IoU; HPatches: MMA, HEA, corner error |
 | Speed | per-pair latency mean / p50 / p95 |
 | Diagnostics | match count, RANSAC inlier count; keypoint budget in config |
+| Memory | peak allocated / reserved GPU MiB per model |
 | Per-sample output | query, predicted box, GT boxes, hit, latency |
-| Planned | params + disk size, peak GPU / CPU memory |
+| Planned | params + disk size, peak CPU memory |
 
 Reproducibility requires a fixed keypoint budget, input resolution, RANSAC
 threshold, and Lowe ratio. OpenCV RANSAC is not seeded, so small run-to-run
@@ -185,7 +186,7 @@ make hpatches MODELS="sift orb"
 make bench MANIFEST=path/to/manifest.json OUTPUT=outputs/custom
 ```
 
-`make bench` and `make hpatches` default to all five implemented models. Use
+`make bench` and `make hpatches` default to all eight implemented models. Use
 `MODELS="..."` for a faster subset. Run `main.py` directly for flags not
 exposed by the Makefile.
 
@@ -202,6 +203,29 @@ exposed by the Makefile.
 | `--ransac-threshold` | `3.0` | RANSAC reprojection threshold in pixels |
 | `--max-keypoints` | `2048` | keypoint budget per image |
 | `--ratio` | `0.75` | Lowe ratio-test threshold |
+| `--max-side` | `640` | longest image side for LoFTR / FlexGlue; larger images are downscaled |
+| `--gpu-mem-fraction` | `0` | cap this process to a share of VRAM; `0` auto-sizes from free memory |
+
+### GPU memory
+
+The dense matchers are the memory hogs: RoMa peaks around 4.4 GiB at its default
+560 / 864 resolutions, and uncapped LoFTR grows quickly with image size (about
+5.5 GiB at 1280×870 and a single 6.4 GiB allocation at 3000×2000). WSL2 shares
+the GPU with Windows, so only the currently free VRAM is available, and on
+ROCm a full VRAM exhaustion can hang the host driver instead of raising a clean
+OOM.
+
+The pipeline therefore:
+
+- caps itself to 90% of the currently free VRAM (`--gpu-mem-fraction` overrides),
+- caps LoFTR and FlexGlue inputs at `--max-side` (640 by default),
+- frees each model and empties the CUDA cache before the next one,
+- logs and skips a model that hits `torch.OutOfMemoryError` instead of aborting
+  the whole run.
+
+If a run still comes close to the limit, lower `--max-side` (for example
+`make hpatches MAX_SIDE=480`) or run one model at a time with
+`MODELS="roma"`.
 
 ### Manifest format
 

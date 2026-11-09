@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import torch
 from kornia.color import rgb_to_grayscale
@@ -29,6 +30,7 @@ class LoFTRMatcher(FeatureMatcher):
         ransac_threshold: float = 3.0,
         device: str | None = None,
         pretrained: str = "outdoor",
+        max_side: int = 640,
     ) -> None:
         """Initialize LoFTR.
 
@@ -38,6 +40,8 @@ class LoFTRMatcher(FeatureMatcher):
             ransac_threshold: RANSAC reprojection threshold in pixels.
             device: ``cuda``, ``cpu``, or ``None`` for automatic selection.
             pretrained: Kornia weight set, ``outdoor`` or ``indoor``.
+            max_side: Longest image side fed to LoFTR; larger images are
+                downscaled and keypoints are mapped back.
         """
         super().__init__(
             max_keypoints=max_keypoints,
@@ -47,6 +51,7 @@ class LoFTRMatcher(FeatureMatcher):
         self.device = torch.device(
             device or ("cuda" if torch.cuda.is_available() else "cpu")
         )
+        self.max_side = max_side
         self._model = LoFTR(pretrained=pretrained).eval().to(self.device)
 
     def match(self, reference: np.ndarray, query: np.ndarray) -> MatchResult:
@@ -59,8 +64,8 @@ class LoFTRMatcher(FeatureMatcher):
         Returns:
             Matches and the estimated reference-to-query homography.
         """
-        image0, size0 = self._prepare(reference)
-        image1, size1 = self._prepare(query)
+        image0, size0, scale0 = self._prepare(reference)
+        image1, size1, scale1 = self._prepare(query)
         with torch.inference_mode():
             output = self._model({"image0": image0, "image1": image1})
 
@@ -69,6 +74,9 @@ class LoFTRMatcher(FeatureMatcher):
         confidence = output["confidence"].detach().cpu().numpy()
         if len(keypoints0) == 0:
             return MatchResult(keypoints0=keypoints0, keypoints1=keypoints1)
+
+        keypoints0 *= scale0
+        keypoints1 *= scale1
 
         valid = (
             (keypoints0[:, 0] < size0[0])
@@ -101,16 +109,32 @@ class LoFTRMatcher(FeatureMatcher):
             inlier_count=inlier_count,
         )
 
-    def _prepare(self, image: np.ndarray) -> tuple[torch.Tensor, tuple[int, int]]:
+    def _prepare(
+        self,
+        image: np.ndarray,
+    ) -> tuple[torch.Tensor, tuple[int, int], float]:
         """Convert an RGB image to a padded grayscale tensor.
 
         Args:
             image: RGB image.
 
         Returns:
-            A ``(1, 1, H, W)`` tensor and the original ``(width, height)``.
+            A ``(1, 1, H, W)`` tensor, the original ``(width, height)``, and the
+            scale that maps network coordinates back to the original pixels.
         """
-        height, width = image.shape[:2]
+        original_height, original_width = image.shape[:2]
+        height, width = original_height, original_width
+        longest = max(height, width)
+        scale = 1.0
+        if longest > self.max_side:
+            scale = self.max_side / longest
+            image = cv2.resize(
+                image,
+                (max(1, round(width * scale)), max(1, round(height * scale))),
+                interpolation=cv2.INTER_AREA,
+            )
+            height, width = image.shape[:2]
+
         tensor = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
         tensor = rgb_to_grayscale(tensor.unsqueeze(0))
         pad_height = (-height) % 8
@@ -121,4 +145,8 @@ class LoFTRMatcher(FeatureMatcher):
                 (0, pad_width, 0, pad_height),
                 mode="replicate",
             )
-        return tensor.to(self.device), (width, height)
+        return (
+            tensor.to(self.device),
+            (original_width, original_height),
+            1.0 / scale,
+        )

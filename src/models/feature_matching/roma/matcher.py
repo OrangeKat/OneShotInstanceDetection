@@ -31,6 +31,8 @@ class RoMaMatcher(FeatureMatcher):
         ransac_threshold: float = 3.0,
         device: str | None = None,
         certainty_threshold: float = 0.05,
+        coarse_res: int = 560,
+        upsample_res: int = 864,
     ) -> None:
         """Initialize RoMa.
 
@@ -40,6 +42,8 @@ class RoMaMatcher(FeatureMatcher):
             ransac_threshold: RANSAC reprojection threshold in pixels.
             device: ``cuda``, ``cpu``, or ``None`` for automatic selection.
             certainty_threshold: Minimum RoMa certainty for a sampled match.
+            coarse_res: Coarse matching resolution. Lower values save VRAM.
+            upsample_res: Dense upsampling resolution. Lower values save VRAM.
         """
         super().__init__(
             max_keypoints=max_keypoints,
@@ -53,6 +57,8 @@ class RoMaMatcher(FeatureMatcher):
         torch.set_float32_matmul_precision("highest")
         self._model = roma_outdoor(
             str(self.device),
+            coarse_res=coarse_res,
+            upsample_res=upsample_res,
             use_custom_corr=False,
         )
 
