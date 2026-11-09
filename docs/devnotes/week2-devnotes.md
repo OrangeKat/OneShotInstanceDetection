@@ -111,6 +111,49 @@ Notes:
   matchers. No base-model HPatches sequence result exists; their numbers will
   only be comparable within this project.
 
+### 3.1 Expected vs actual — implemented models
+
+Only metrics that exist on both sides are compared.
+
+| Model | Metric | Expected | Actual | Δ |
+|---|---|---:|---:|---:|
+| SIFT | MMA@3 | 0.870 | 0.734 | −0.136 |
+| SIFT | HEA@3 | 0.760 | 0.705 | −0.055 |
+| ORB | MMA@3 | 0.680 | 0.720 | +0.040 |
+| ORB | HEA@3 | 0.400 | 0.529 | +0.129 |
+| AKAZE | MMA@3 | 0.800 | 0.752 | −0.048 |
+| AKAZE | HEA@3 | 0.650 | 0.586 | −0.064 |
+| SuperPoint + LightGlue | AUC@1 | 0.383 | 0.170 | −0.213 |
+| SuperPoint + LightGlue | AUC@5 | 0.796 | 0.600 | −0.196 |
+| ALIKED + LightGlue | AUC@3 | 0.662 | 0.505 | −0.157 |
+| ALIKED + LightGlue | AUC@5 | 0.769 | 0.643 | −0.126 |
+| ALIKED + LightGlue | AUC@10 | 0.863 | 0.778 | −0.085 |
+
+Observations:
+
+- SIFT and AKAZE are slightly below the published classical values, while ORB
+  is above them. This is consistent with protocol differences: the paper uses
+  tuned ratio thresholds and mutual nearest neighbors, while this harness uses
+  a simple ratio test at 0.75 with a 2,048-keypoint budget.
+- Both learned models are below the published AUC values. The gap is largest
+  for SuperPoint + LightGlue at AUC@1 and smallest for ALIKED + LightGlue at
+  AUC@10.
+- The learned models still produce strong MMA/HEA (ALIKED + LightGlue: 0.864 /
+  0.778 at 3 px), so the AUC gap is more likely protocol-related than a
+  completely broken matcher. Input resize, keypoint budget, RANSAC threshold,
+  and corner-error definition all differ from the source papers.
+- The measured AUC should be used for relative comparison inside this harness,
+  not as a claim that the published AUC was reproduced.
+
+### 3.2 Expected vs actual — not yet measured
+
+| Model | Expected metric | Expected | Status |
+|---|---|---|---|
+| LoFTR | RANSAC AUC@1/5 | 0.415 / 0.788 | not implemented |
+| RoMa | RANSAC AUC@1/3/5 | 0.447 / 0.726 / 0.814 | not implemented |
+| FlexGlue | AUC@3/5/10 | 0.729 / 0.819 / 0.898 | not implemented |
+| DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches result |
+
 ## 4. FlickrLogos-32 Failure Analysis
 
 The failure analysis splits every pair into hit, wrong box, no prediction,

@@ -7,4 +7,4 @@ LinkedIn post.
 | Week | Topics | Link |
 |---|---|---|
 | Week 1 | goal, design, datasets, metrics, SIFT/ORB/AKAZE baselines, FlickrLogos-32 failure analysis | [week1-devnotes.md](week1-devnotes.md) |
-| Week 2 | HPatches validation integrated into the bench, MMA/HEA/corner error, SuperPoint/ALIKED + LightGlue, reference targets for the planned suite, failure analysis | [week2-devnotes.md](week2-devnotes.md) |
+| Week 2 | HPatches validation integrated into the bench, MMA/HEA/AUC/corner error, SuperPoint/ALIKED + LightGlue, expected-vs-actual comparison, failure analysis | [week2-devnotes.md](week2-devnotes.md) |
