@@ -34,6 +34,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | Path | Contents |
 |---|---|
 | `main.py` | benchmark CLI entry point; delegates to `src/pipeline.py` |
+| `Makefile` | common setup, benchmark, validation, and analysis commands |
 | `src/pipeline.py` | box-AP and HPatches protocols, model registry, reports |
 | `src/models/feature_matching/` | SIFT, ORB, AKAZE and shared matching helpers |
 | `src/analysis/` | failure-analysis data, metrics, plots, tables, report |
@@ -55,9 +56,9 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 ## Setup
 
 ```bash
-python3 scripts/prepare_rocm_wheels.py   # once on a fresh clone
-uv lock && uv sync --all-groups
-uv run python scripts/gpu_check.py
+make rocm-wheels   # once on a fresh clone
+make sync
+make gpu
 ```
 
 - Python 3.12 is required by the ROCm wheel pins.
@@ -70,11 +71,9 @@ uv run python scripts/gpu_check.py
 ### Box protocol — FlickrLogos-32
 
 ```bash
-uv run python scripts/prepare_flickrlogos32.py
-uv run python main.py \
-  --manifest data/flickrlogos32/manifest.json \
-  --models sift orb akaze \
-  --output outputs/flickrlogos32
+make data-flickr
+make bench
+make bench MODELS="sift"
 ```
 
 - 32 logo classes, 2,208 positive pairs + 320 cross-class negatives.
@@ -87,11 +86,9 @@ uv run python main.py \
 ### HPatches validation
 
 ```bash
-uv run python scripts/prepare_hpatches.py
-uv run python main.py \
-  --protocol hpatches \
-  --models sift orb akaze \
-  --output outputs/hpatches
+make data-hpatches
+make hpatches
+make hpatches MODELS="sift"
 ```
 
 - 116 sequences, 580 reference/target pairs.
@@ -102,8 +99,8 @@ uv run python main.py \
 ### Examples and failure analysis
 
 ```bash
-uv run python scripts/visualize_examples.py
-uv run python scripts/analyze_results.py
+make examples
+make analyze
 ```
 
 - Examples: `outputs/flickrlogos32/examples/index.md`.
@@ -118,8 +115,8 @@ uv run python scripts/analyze_results.py
 4. Run both protocols:
 
 ```bash
-uv run python main.py --manifest data/flickrlogos32/manifest.json --models <name>
-uv run python main.py --protocol hpatches --models <name>
+make bench MODELS="<name>"
+make hpatches MODELS="<name>"
 ```
 
 5. Update README/devnotes results if the change is user-visible.
@@ -136,18 +133,14 @@ Use the shared helpers in `base.py`: `ratio_test`, `estimate_homography`,
 - Prefer small modules over one large file.
 
 ```bash
-uv run ruff check .
-uv run ruff format .
+make check
+make format
 ```
-
-Known pre-existing Ruff findings in `scripts/prepare_rocm_wheels.py`: `I001`
-(import order) and `F841` (unused `linux`). Do not fix unless asked.
 
 ## Verification
 
-- Run `ruff check` and `ruff format --check` after code changes.
-- Smoke-test with a subset before a full run:
-  `uv run python main.py --manifest data/flickrlogos32/manifest.json --max-samples 20`.
+- Run `make check` after code changes.
+- Smoke-test with a subset before a full run: `make bench-smoke`.
 - Confirm output JSON/Markdown exists and is well-formed.
 - RANSAC is not seeded, so small run-to-run variation is expected.
 
@@ -156,7 +149,7 @@ Known pre-existing Ruff findings in `scripts/prepare_rocm_wheels.py`: `I001`
 - Use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
   `chore:`.
 - One logical change per commit. Imperative subject; body explains what and why.
-- Tag the end of each week as `week-N` and push the tag.
+- Tag the end of each week as `week-N` with `make tag-week WEEK=N`; push the tag.
 - Remote fetch uses HTTPS; push uses SSH (`git@github.com:OrangeKat/...`).
 - Do not commit datasets, results, or private notes.
 - Update the README and the current week devlog when behavior or results change.

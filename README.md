@@ -137,19 +137,37 @@ variation is expected.
 ## Pipeline
 
 `main.py` is the benchmark entry point; the implementation lives in
-`src/pipeline.py`.
+`src/pipeline.py`. The Makefile wraps the common commands — run `make help`
+to list them.
 
 ```bash
-uv run python main.py \
-  --manifest data/flickrlogos32/manifest.json \
-  --models sift orb akaze \
-  --output outputs/flickrlogos32
-
-uv run python main.py \
-  --protocol hpatches \
-  --models sift orb akaze \
-  --output outputs/hpatches
+make bench
+make hpatches
 ```
+
+Common targets:
+
+| Target | Action |
+|---|---|
+| `make sync` | `uv lock && uv sync --all-groups` |
+| `make check` | Ruff lint + format check |
+| `make bench` | FlickrLogos-32 box benchmark |
+| `make bench-smoke` | 20-sample smoke test |
+| `make hpatches` | HPatches matcher validation |
+| `make examples` | annotated prediction examples |
+| `make analyze` | failure-analysis plots and report |
+| `make clean` | remove local caches |
+| `make tag-week WEEK=N` | create and push the weekly tag |
+
+Override variables for a run, for example:
+
+```bash
+make bench MODELS="sift"
+make hpatches MODELS="sift orb"
+make bench MANIFEST=path/to/manifest.json OUTPUT=outputs/custom
+```
+
+Run `main.py` directly for flags not exposed by the Makefile.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -212,6 +230,7 @@ Each record is one reference/query pair:
 | `src/analysis/` | failure-analysis data, metrics, plots, and report helpers |
 | `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics, and report |
 | `main.py` | benchmark CLI entry point; delegates to `src/pipeline.py` |
+| `Makefile` | common setup, benchmark, validation, and analysis commands |
 | `scripts/prepare_rocm_wheels.py` | retags + vendors AMD's legacy-tagged ROCm wheel closure for `uv lock` |
 | `scripts/prepare_flickrlogos32.py` | downloads the FlickrLogos-32 subset from OpenLogo and writes the benchmark manifest |
 | `scripts/prepare_hpatches.py` | downloads HPatches and writes the box-AP manifest |
@@ -229,11 +248,11 @@ Each record is one reference/query pair:
 ### Quick start — Linux + AMD ROCm
 
 ```bash
-python3 scripts/prepare_rocm_wheels.py      # once; vendors the retagged AMD ROCm closure
-uv lock && uv sync --all-groups
-uv run python scripts/gpu_check.py          # expect device: cuda (ROCm/HIP build)
-uv run python scripts/prepare_flickrlogos32.py  # download + build data/flickrlogos32/manifest.json
-uv run python main.py --manifest data/flickrlogos32/manifest.json  # run the benchmark
+make rocm-wheels                            # once; vendors the retagged AMD ROCm closure
+make sync                                   # uv lock + uv sync --all-groups
+make gpu                                    # expect device: cuda (ROCm/HIP build)
+make data-flickr                            # download + build data/flickrlogos32/manifest.json
+make bench                                  # run the benchmark
 ```
 
 A ~1.9 GB `.venv` is created; make sure you have disk headroom. On WSL2, run
@@ -247,7 +266,7 @@ FlickrLogos-32 images from the public `Voxel51/OpenLogo` mirror and rebuilds
 the 32 logo classes.
 
 ```bash
-uv run python scripts/prepare_flickrlogos32.py
+make data-flickr
 ```
 
 This writes `data/flickrlogos32/images/` and
@@ -261,13 +280,14 @@ Prep options: `--data-dir`, `--samples` (cached OpenLogo metadata),
 Run the benchmark with:
 
 ```bash
-uv run python main.py --manifest data/flickrlogos32/manifest.json --models sift orb akaze
+make bench
+make bench MODELS="sift"
 ```
 
 Save annotated prediction examples, including failures and false positives:
 
 ```bash
-uv run python scripts/visualize_examples.py
+make examples
 ```
 
 The images and a Markdown index are written to
@@ -281,8 +301,9 @@ The benchmark runs through the same pipeline and model registry, but switches
 to the metrics used in the papers: MMA@1/3/5/10, HEA@1/3/5/10, and corner error.
 
 ```bash
-uv run python scripts/prepare_hpatches.py
-uv run python main.py --protocol hpatches --models sift orb akaze --output outputs/hpatches
+make data-hpatches
+make hpatches
+make hpatches MODELS="sift"
 ```
 
 This downloads the 116 sequences (580 reference/target pairs) into
@@ -341,7 +362,7 @@ same command — no separate validation script.
 ## Failure analysis
 
 ```bash
-uv run python scripts/analyze_results.py
+make analyze
 ```
 
 This writes plots, CSVs, and `analysis.md` to `outputs/flickrlogos32/analysis/`.

@@ -21,8 +21,8 @@
 There is no separate validation executable. The command is the benchmark:
 
 ```bash
-uv run python scripts/prepare_hpatches.py
-uv run python main.py --protocol hpatches --models sift orb akaze --output outputs/hpatches
+make data-hpatches
+make hpatches
 ```
 
 ## 2. HPatches Validation

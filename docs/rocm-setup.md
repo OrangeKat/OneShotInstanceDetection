@@ -20,11 +20,11 @@ is staged in `vendor/pytorch-rocm`, wired into `pyproject.toml` via
 ## Quick start
 
 ```bash
-python3 scripts/prepare_rocm_wheels.py      # once; vendors the retagged AMD ROCm closure
-uv lock && uv sync --all-groups
-uv run python scripts/gpu_check.py          # expect device: cuda (ROCm/HIP build)
-uv run python scripts/prepare_flickrlogos32.py  # download + build data/flickrlogos32/manifest.json
-uv run python main.py --manifest data/flickrlogos32/manifest.json  # run the benchmark
+make rocm-wheels                            # once; vendors the retagged AMD ROCm closure
+make sync                                   # uv lock + uv sync --all-groups
+make gpu                                    # expect device: cuda (ROCm/HIP build)
+make data-flickr                            # download + build data/flickrlogos32/manifest.json
+make bench                                  # run the benchmark
 ```
 
 A ~1.9 GB `.venv` is created; make sure you have disk headroom. On Linux this
@@ -126,7 +126,8 @@ The canonical check is that torch exposes your AMD GPU through the standard
 
 ```python
 import torch
-print(torch.version.hip)          # e.g. "10.1.0" on a ROCm build; None on CUDA
+
+print(torch.version.hip)  # e.g. "10.1.0" on a ROCm build; None on CUDA
 print(torch.cuda.is_available())  # True when the GPU is visible
 print(torch.cuda.get_device_name(0))
 ```
