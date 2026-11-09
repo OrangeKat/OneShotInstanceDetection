@@ -10,7 +10,8 @@ software links are inline or in [§6 References](#6-references).
 evaluation the papers use. Once I resized images to a 480 px short side and
 measured corner error the way the HPatches benchmarks do, ALIKED + LightGlue
 landed within about 0.02 of its published AUC, and FlexGlue and LoFTR were
-close. RoMa is still off, and I think that one is a sampling problem on my side.
+close. RoMa needed one more fix — the official balanced sampling instead of my
+top-certainty shortcut — and then it matched its published AUC as well.
 
 ## 1. What I built
 
@@ -88,7 +89,8 @@ before I understood the protocol.
 Match filtering differs by family: the classical matchers use the 0.75 ratio
 test, LightGlue uses `filter_threshold=0.1`, FlexGlue uses its own
 `filter_threshold=0.1`, LoFTR keeps the highest-confidence correspondences, and
-RoMa thresholds certainty at 0.05. `--ratio` only affects the classical rows.
+RoMa draws certainty-weighted, KDE-balanced samples. `--ratio` only affects the
+classical rows.
 
 On the split, viewpoint is harder than illumination for every model, which is
 the pattern the dataset is built to expose. What surprised me was the spread:
@@ -250,21 +252,24 @@ protocol. SuperPoint + LightGlue remains furthest below at 1 px — [LightGlue
 Table 1](https://arxiv.org/abs/2306.13643) uses MAGSAC++ with per-method tuned
 inlier thresholds, while I used fixed 3 px RANSAC.
 
-RoMa is the one I have not re-run yet, and it is still the largest unexplained
-gap: even with normalized error its AUC@5 is 0.548 against 0.814 published.
-The sampling difference is my best explanation. Keeping the 2,048
-highest-certainty points gives a biased, spatially clustered set, which fits
-the rest of the numbers: MMA@3 = 0.937, because the correspondences themselves
-are good, but HEA@3 = 0.548, because the homography is fitted from a
-concentrated region.
+RoMa was the last one, and it turned out to be the cleanest confirmation of the
+sampling theory. I re-ran it the way the official benchmark does: 5,000
+certainty-weighted, KDE-balanced samples, RANSAC threshold
+`3 · min(H, W) / 480`, normalized corner error, and the benchmark's 108
+sequences. It gives AUC@1/3/5/10 = 0.437 / 0.721 / 0.812 / 0.891, against
+0.447 / 0.726 / 0.814 published, with a median normalized corner error of
+0.50 px. The model was fine; the shortcut of keeping the 2,048
+highest-certainty points was the problem. At the harness's 2,048 budget and
+raw-pixel thresholds, the same change lifts HEA@3 from 0.548 to 0.841 and drops
+median corner error from 2.45 px to 0.73 px. The wrapper now uses RoMa's
+`sample(..., num=max_keypoints)`, and the RoMa row in §2 stays as the
+pre-change trace.
 
 Where this leaves the harness:
 
 - Decide whether HPatches should adopt the 480-short-side,
   normalized-corner-error protocol permanently. If yes, re-run all eight models
   and treat those as the baseline, keeping §2 as the trace.
-- Re-run RoMa with `sample(..., 5000)` balanced sampling and a normalized
-  RANSAC threshold.
 - Keep recording later harness or model changes here rather than rewriting the
   first-run tables.
 

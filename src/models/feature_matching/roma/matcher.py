@@ -30,18 +30,17 @@ class RoMaMatcher(FeatureMatcher):
         ratio: float = 0.75,
         ransac_threshold: float = 3.0,
         device: str | None = None,
-        certainty_threshold: float = 0.05,
         coarse_res: int = 560,
         upsample_res: int = 864,
     ) -> None:
         """Initialize RoMa.
 
         Args:
-            max_keypoints: Maximum sampled correspondences kept for RANSAC.
+            max_keypoints: Number of correspondences drawn with RoMa's
+                certainty-weighted, KDE-balanced sampling.
             ratio: Accepted for interface compatibility; unused.
             ransac_threshold: RANSAC reprojection threshold in pixels.
             device: ``cuda``, ``cpu``, or ``None`` for automatic selection.
-            certainty_threshold: Minimum RoMa certainty for a sampled match.
             coarse_res: Coarse matching resolution. Lower values save VRAM.
             upsample_res: Dense upsampling resolution. Lower values save VRAM.
         """
@@ -53,7 +52,6 @@ class RoMaMatcher(FeatureMatcher):
         self.device = torch.device(
             device or ("cuda" if torch.cuda.is_available() else "cpu")
         )
-        self.certainty_threshold = certainty_threshold
         torch.set_float32_matmul_precision("highest")
         self._model = roma_outdoor(
             str(self.device),
@@ -75,47 +73,29 @@ class RoMaMatcher(FeatureMatcher):
         image0 = Image.fromarray(reference)
         image1 = Image.fromarray(query)
         warp, certainty = self._model.match(image0, image1)
-        warp = warp.detach().cpu().numpy()
-        certainty = certainty.detach().cpu().numpy()
-        if warp.ndim == 4:
-            warp = warp[0]
-        if certainty.ndim == 3:
-            certainty = certainty[0]
-
-        height, width = warp.shape[:2]
-        if certainty.shape[-1] == 2 * width:
-            certainty = certainty[..., :width]
-        points0 = warp[..., :2].reshape(-1, 2)
-        points1 = warp[..., 2:4].reshape(-1, 2)
-        scores = certainty.reshape(-1)
-
-        valid = (
-            (scores >= self.certainty_threshold)
-            & (np.abs(points1[:, 0]) <= 1.0)
-            & (np.abs(points1[:, 1]) <= 1.0)
+        matches, _ = self._model.sample(
+            warp,
+            certainty,
+            num=self.max_keypoints,
         )
-        indices = np.flatnonzero(valid)
-        if len(indices) == 0:
+        matches = matches.detach().cpu().numpy()
+        if len(matches) == 0:
             empty = np.zeros((0, 2), dtype=np.float32)
             return MatchResult(keypoints0=empty, keypoints1=empty)
-
-        if len(indices) > self.max_keypoints:
-            keep = np.argsort(scores[indices])[::-1][: self.max_keypoints]
-            indices = indices[keep]
 
         reference_height, reference_width = reference.shape[:2]
         query_height, query_width = query.shape[:2]
         keypoints0 = self._to_pixels(
-            points0[indices],
+            matches[:, :2],
             reference_width,
             reference_height,
         )
         keypoints1 = self._to_pixels(
-            points1[indices],
+            matches[:, 2:4],
             query_width,
             query_height,
         )
-        pairs = tuple((index, index) for index in range(len(indices)))
+        pairs = tuple((index, index) for index in range(len(matches)))
         homography, inlier_mask, inlier_count = estimate_homography(
             keypoints0,
             keypoints1,

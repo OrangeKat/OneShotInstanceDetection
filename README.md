@@ -95,7 +95,8 @@ Notes:
 - **LoFTR** uses Kornia's `outdoor` weights. LoFTR ignores `--ratio` because it
   is detector-free and returns matched keypoints directly.
 - **RoMa v1** uses the official outdoor weights with native local correlation
-  (`use_custom_corr=False`), 560 px coarse and 864 px upsample resolution.
+  (`use_custom_corr=False`), 560 px coarse and 864 px upsample resolution, and
+  its certainty-weighted, KDE-balanced sampling.
 - **FlexGlue** uses the official weights with an ALIKED detector
   (`origin="corner"`) and its internal DINOv3-ConvNeXt descriptor.
 - RoMa and FlexGlue code is vendored under the model directory with its
@@ -401,7 +402,7 @@ cross-class negatives instead of the original 3,000 no-logo images.
 | SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 0.170 | 0.455 | 0.600 | 0.751 | 1.447 px |
 | ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 0.223 | 0.505 | 0.643 | 0.778 | 1.181 px |
 | LoFTR | 0.516 | 0.847 | 0.914 | 0.948 | 0.479 | 0.762 | 0.853 | 0.914 | 0.269 | 0.528 | 0.642 | 0.767 | 1.080 px |
-| RoMa | 0.703 | 0.937 | 0.976 | 0.990 | 0.248 | 0.548 | 0.684 | 0.828 | 0.110 | 0.324 | 0.445 | 0.606 | 2.445 px |
+| RoMa | 0.677 | 0.915 | 0.958 | 0.981 | 0.605 | 0.841 | 0.912 | 0.950 | 0.338 | 0.611 | 0.720 | 0.827 | 0.729 px |
 | FlexGlue | 0.480 | 0.881 | 0.963 | 0.994 | 0.419 | 0.791 | 0.891 | 0.947 | 0.203 | 0.502 | 0.641 | 0.784 | 1.246 px |
 
 For reference, [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT
@@ -412,9 +413,10 @@ expected. The learned-model rows are project measurements under the same
 MMA/HEA/AUC protocol; published results for those models use different
 homography-AUC settings, so compare them within the same metric. Measured AUC
 is lower than published values because of differences in resize, keypoint
-budget, RANSAC, and corner-error definition. RoMa has the best MMA@3 but the
-weakest fitted homography: its dense correspondences are accurate, while corner
-extrapolation is less stable.
+budget, RANSAC, and corner-error definition. RoMa has the best HEA@3 (0.841)
+and median corner error (0.729 px) after switching to its official balanced
+sampling; with the earlier top-certainty shortcut it had the best MMA but the
+weakest fitted homography.
 
 Adding another matcher only requires registering it in `MODELS` and running the
 same command — no separate validation script.
