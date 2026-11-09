@@ -3,11 +3,15 @@
 > **Status.** Week 2 integrated native HPatches metrics into the same benchmark
 > and added a failure-analysis pass over the FlickrLogos-32 results.
 >
+> **Trace vs development.** §1–§5 are the initial implementation trace and are
+> kept unchanged. Later work is appended to the
+> [§6 development log](#6-development-log); §7 lists references.
+>
 > **Project arc.** Benchmark current solutions → diagnose failure modes → build
 > the final pipeline / full model → publish a full report.
 >
 > **References.** Paper, dataset, and software links are inline or in
-> [§6 References](#6-references).
+> [§7 References](#7-references).
 
 ## 1. What Changed
 
@@ -40,6 +44,11 @@ make hpatches
 ```
 
 ## 2. HPatches Validation
+
+**Initial implementation trace (2026-11-09).** This is the first complete
+eight-model run. It uses the harness as originally written: native image
+resolution, raw-pixel thresholds, and a fixed 3 px RANSAC threshold. The numbers
+are preserved as-is; the protocol audit and re-measurement are in §6.
 
 **Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints
 (or correspondences for dense matchers), RANSAC threshold 3 px. Classical
@@ -136,7 +145,8 @@ Notes:
 
 ### 3.1 Expected vs actual — implemented models
 
-Only metrics that exist on both sides are compared.
+Only metrics that exist on both sides are compared. The Δ column mixes source
+protocols and overstates the gap; see [§6](#6-development-log) for the audit.
 
 | Model | Metric | Expected | Actual | Δ |
 |---|---|---:|---:|---:|
@@ -224,7 +234,101 @@ false positive, or true negative.
 - Use the failure analysis to choose the final pipeline, then write the final
   report.
 
-## 6. References
+## 6. Development log
+
+Entries are appended after the initial trace. Earlier sections are not rewritten.
+
+### 2026-11-09 — why the measured AUC is below the published values
+
+**Trigger.** Every learned model landed below its published HPatches AUC by more
+than the expected run-to-run variation.
+
+**Main finding: the evaluation protocol accounts for most of the gap, not the
+matchers.** The official HPatches homography protocol resizes images so the
+**shorter side is 480 px** and reports corner error and the RANSAC inlier
+threshold in that resized space:
+
+- [LightGlue §5.1](https://arxiv.org/abs/2306.13643): "resize all images such
+  that their smaller dimension is equal to 480 pixels".
+- The [RoMa HPatches
+  benchmark](https://github.com/Parskatt/RoMa/blob/master/romatch/benchmarks/hpatches_sequences_homog_benchmark.py)
+  divides corner error and the inlier threshold by `min(H, W) / 480`:
+  `ransacReprojThreshold = 3 * min(w2, h2) / 480`.
+
+Our initial run keeps native resolution (up to 3,088 × 2,056) and a fixed 3 px
+threshold. On the largest pair, 3 px is ≈ 0.70 px at 480, so an identical
+homography scores much worse here. Two smaller differences:
+
+- The official benchmark ignores eight sequences, the same list as LoFTR/RoMa:
+  `i_contruction`, `i_crownnight`, `i_dc`, `i_pencils`, `i_whitebuilding`,
+  `v_artisans`, `v_astronautis`, `v_talent`. Our run includes them.
+- RoMa's benchmark samples 5,000 matches with certainty-weighted, KDE-balanced
+  sampling. Our wrapper keeps the 2,048 highest-certainty grid points, which
+  cluster spatially. This explains RoMa's MMA@3 = 0.937 with HEA@3 = 0.548: the
+  correspondences are accurate, but the homography is fitted from a biased
+  region.
+
+#### Reanalysis with normalized corner error (no re-run)
+
+Stored per-pair corner errors rescaled by `min(H, W) / 480`:
+
+| Model | AUC@1 raw | AUC@1 norm | AUC@10 raw | AUC@10 norm | AUC@10 norm, 8 ignored |
+|---|---:|---:|---:|---:|---:|
+| SIFT | 0.236 | 0.310 | 0.726 | 0.796 | 0.793 |
+| ORB | 0.123 | 0.179 | 0.584 | 0.665 | 0.661 |
+| AKAZE | 0.134 | 0.203 | 0.627 | 0.711 | 0.701 |
+| SuperPoint + LightGlue | 0.170 | 0.246 | 0.751 | 0.833 | 0.831 |
+| ALIKED + LightGlue | 0.223 | 0.314 | 0.778 | 0.848 | 0.845 |
+| LoFTR | 0.269 | 0.355 | 0.767 | 0.836 | 0.834 |
+| RoMa | 0.110 | 0.164 | 0.606 | 0.712 | 0.717 |
+| FlexGlue | 0.203 | 0.293 | 0.784 | 0.857 | 0.856 |
+
+Normalization alone adds 0.07–0.11 AUC@10. Dropping the eight ignored sequences
+moves AUC@10 by at most 0.01, so that is a minor factor.
+
+#### Re-run under the published 480 px protocol
+
+Both images resized so the shorter side is 480 px, the ground-truth homography
+scaled by `H' = S_query · H · S_reference⁻¹`, the same 3 px RANSAC threshold now
+in 480-space, and AUC computed on the resized corners. SuperPoint + LightGlue
+uses 1,024 keypoints to match the LightGlue setup; the others keep 2,048.
+
+| Model | AUC@1 | AUC@3 | AUC@5 | AUC@10 | Published | Δ at matched thresholds |
+|---|---:|---:|---:|---:|---|---:|
+| SuperPoint + LightGlue | 0.269 | 0.596 | 0.721 | 0.840 | 0.383 @1 / 0.796 @5 | −0.114 / −0.075 |
+| ALIKED + LightGlue | 0.323 | 0.640 | 0.754 | 0.854 | 0.662 / 0.769 / 0.863 @3/5/10 | −0.022 / −0.015 / −0.009 |
+| FlexGlue | 0.325 | 0.657 | 0.772 | 0.875 | 0.729 / 0.819 / 0.898 @3/5/10 | −0.072 / −0.047 / −0.023 |
+| LoFTR | 0.388 | 0.669 | 0.767 | 0.856 | 0.415 @1 / 0.788 @5 | −0.027 / −0.021 |
+
+Reading:
+
+- ALIKED + LightGlue lands within 0.02 of the FlexGlue paper, so the protocol
+  explains almost its whole initial gap.
+- FlexGlue is closest at 10 px and furthest at 3 px. Its paper also reports a
+  640 px variant, so our 480 px run is not a like-for-like reproduction.
+- SuperPoint + LightGlue remains furthest below at 1 px. [LightGlue Table
+  1](https://arxiv.org/abs/2306.13643) uses MAGSAC++ with per-method tuned inlier
+  thresholds, while this harness uses fixed 3 px RANSAC.
+- LoFTR is close under the same protocol.
+
+**Not yet done.** RoMa has not been rerun with the 480 px protocol and balanced
+sampling. Even with normalized error, its AUC@5 is 0.548 against 0.814
+published, the largest remaining gap, consistent with the sampling issue above.
+
+**Consequence for §3.1.** The expected values come from three different
+protocols (LightGlue Table 1 with MAGSAC++, FlexGlue Table 2, MV-RoMa). The Δ
+column is a rough sanity check, not a reproduction error.
+
+**Next actions.**
+
+- Decide whether the HPatches harness should adopt the 480-short-side,
+  normalized-corner-error protocol. If yes, rerun all eight models and report
+  those as the baseline, keeping §2 as the trace.
+- Rerun RoMa with `sample(..., 5000)` balanced sampling and a normalized RANSAC
+  threshold.
+- Record each later harness or model change as a dated entry here.
+
+## 7. References
 
 - Week 1 design and bibliography:
   [week1-devnotes.md](week1-devnotes.md)
