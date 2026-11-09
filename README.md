@@ -363,13 +363,16 @@ cross-class negatives instead of the original 3,000 no-logo images.
 | SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 1.344 px |
 | ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
 | AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
+| SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 1.447 px |
+| ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 1.181 px |
 
 For reference, [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT
 MMA@3 / HEA@3 of 0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their
 protocol uses tuned ratio tests, mutual nearest neighbors, 108 sequences, and
 [OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
-expected. The values are in the expected range, and the full report includes the
-literature table plus per-split metrics.
+expected. The learned-model rows are project measurements under the same
+MMA/HEA protocol; published SuperPoint/ALIKED results use homography AUC, so
+compare them within the same metric.
 
 Adding another matcher only requires registering it in `MODELS` and running the
 same command — no separate validation script.

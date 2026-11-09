@@ -49,12 +49,19 @@ simple ratio test at 0.75, RANSAC threshold 3 px.
 | SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 1.344 px |
 | ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
 | AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
+| SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 1.447 px |
+| ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 1.181 px |
+
+The learned models use LightGlue's own match-score filter
+(`filter_threshold=0.1`); `--ratio` only applies to the classical matchers.
 
 [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT MMA@3 / HEA@3 of
 0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their protocol uses tuned
 ratio tests, mutual nearest neighbors, 108 sequences, and
 [OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
-expected. The values are in the expected range.
+expected. The learned rows are measured under the same MMA/HEA protocol;
+published SuperPoint/ALIKED HPatches numbers use homography AUC, so compare
+within the same metric.
 
 Per split, viewpoint is harder than illumination for homography accuracy:
 
