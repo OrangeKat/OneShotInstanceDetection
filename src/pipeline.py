@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from logging import Logger
 from pathlib import Path
@@ -23,7 +23,10 @@ import numpy as np
 from src.models.feature_matching import (
     AKAZEMatcher,
     ALIKEDLightGlueMatcher,
+    FlexGlueMatcher,
+    LoFTRMatcher,
     ORBMatcher,
+    RoMaMatcher,
     SIFTMatcher,
     SuperPointLightGlueMatcher,
 )
@@ -41,6 +44,9 @@ MODELS: dict[str, type[FeatureMatcher]] = {
     "akaze": AKAZEMatcher,
     "superpoint_lightglue": SuperPointLightGlueMatcher,
     "aliked_lightglue": ALIKEDLightGlueMatcher,
+    "loftr": LoFTRMatcher,
+    "roma": RoMaMatcher,
+    "flexglue": FlexGlueMatcher,
 }
 
 
@@ -275,6 +281,7 @@ def run_benchmark(
     matcher: FeatureMatcher,
     samples: Sequence[InstanceSample],
     iou_threshold: float,
+    loader: Callable[[InstanceSample], InstanceSample] | None = None,
 ) -> dict[str, object]:
     """Run one matcher over all samples.
 
@@ -282,12 +289,15 @@ def run_benchmark(
         matcher: Model instance.
         samples: Reference/query pairs.
         iou_threshold: IoU threshold that defines a hit.
+        loader: Optional callable that loads a sample's images.
 
     Returns:
         A model report.
     """
     records: list[SampleResult] = []
     for sample in samples:
+        if loader is not None:
+            sample = loader(sample)
         reference = _reference_crop(sample)
         query = _query_image(sample)
         start = time.perf_counter()
@@ -569,7 +579,7 @@ def _run_box(
         Reports and config.
     """
     dataset = InstanceDataset(args.manifest, root=args.root)
-    samples = list(dataset)
+    samples = dataset.samples
     if args.max_samples is not None:
         samples = samples[: args.max_samples]
 
@@ -589,6 +599,7 @@ def _run_box(
             _make_matcher(name, args),
             samples,
             args.iou_threshold,
+            loader=dataset.load,
         )
         reports.append(report)
         latency = report["latency_ms"]
