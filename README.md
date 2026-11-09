@@ -7,6 +7,9 @@ image or crop.
 > implemented. FlickrLogos-32 is the first dataset; current results are below.
 > Design notes and the full bibliography are in
 > [`docs/devnotes/week1-devnotes.md`](docs/devnotes/week1-devnotes.md).
+>
+> **References:** paper, dataset, and software links are inline or in
+> [References](#references).
 
 ## Overview
 
@@ -58,44 +61,45 @@ Each family has at least one simple baseline and one stronger entry.
 Implemented now: **SIFT + BF-L2**, **ORB + BF-Hamming**, **AKAZE +
 BF-Hamming**, **SuperPoint + LightGlue**, and **ALIKED + LightGlue**, all
 followed by a ratio/filter step and RANSAC homography. The rest of the suite is
-planned.
+planned. Paper links are in the table below.
 
 | Layer | Baseline | Advanced |
 |---|---|---|
-| Classical | SIFT + BF-L2 / FLANN-KDTree, ORB + BF-Hamming, AKAZE + BF-Hamming | NCC template matching |
-| Learned sparse | SuperPoint + LightGlue, ALIKED + LightGlue | OmniGlue, XFeat |
-| Dense | LoFTR, RoMa v1 | RoMa v2, FlexGlue |
-| Foundation | DINOv2 ViT-B/14 patch cosine | DINOv3 ViT-B/16 |
-| Retrieval (buildings) | DINOv2 CLS/GeM + FAISS | VLAD/GeM + local verification |
-| People | DINOv2 embeddings + NN | person-search model |
-| Multi-instance | sequential RANSAC | J-Linkage / proposal-verify |
+| Classical | [SIFT](https://doi.org/10.1023/B:VISI.0000029664.99615.94) + BF-L2 / FLANN-KDTree, [ORB](https://doi.org/10.1109/ICCV.2011.6126544) + BF-Hamming, [AKAZE](https://doi.org/10.5244/C.27.13) + BF-Hamming | [NCC](https://docs.opencv.org/4.x/d4/dc6/tutorial_py_template_matching.html) template matching |
+| Learned sparse | [SuperPoint](https://arxiv.org/abs/1712.07629) + [LightGlue](https://arxiv.org/abs/2306.13643), [ALIKED](https://arxiv.org/abs/2304.03608) + [LightGlue](https://arxiv.org/abs/2306.13643) | [OmniGlue](https://arxiv.org/abs/2405.12979), [XFeat](https://arxiv.org/abs/2404.19174) |
+| Dense | [LoFTR](https://arxiv.org/abs/2104.00680), [RoMa v1](https://arxiv.org/abs/2305.15404) | [RoMa v2](https://arxiv.org/abs/2511.15706), [FlexGlue](https://arxiv.org/abs/2610.32976) |
+| Foundation | [DINOv2](https://arxiv.org/abs/2304.07193) ViT-B/14 patch cosine | [DINOv3](https://arxiv.org/abs/2508.10104) ViT-B/16 |
+| Retrieval (buildings) | [DINOv2](https://arxiv.org/abs/2304.07193) CLS/[GeM](https://arxiv.org/abs/1711.02512) + [FAISS](https://github.com/facebookresearch/faiss) | [VLAD](https://doi.org/10.1109/CVPR.2010.5540039)/[GeM](https://arxiv.org/abs/1711.02512) + local verification |
+| People | [DINOv2](https://arxiv.org/abs/2304.07193) embeddings + NN | [person-search model](https://arxiv.org/abs/1604.01850) |
+| Multi-instance | [sequential RANSAC](https://doi.org/10.1145/358669.358692) | [J-Linkage](https://doi.org/10.1007/978-3-540-88682-2_41) / proposal-verify |
 
-Selected suite:
-
-- **Local feature matching** — SIFT/BF-L2 (FLANN-KDTree optional),
-  ORB/BF-Hamming, AKAZE/BF-Hamming, SuperPoint/LightGlue,
-  ALIKED/LightGlue, LoFTR, RoMa, FlexGlue.
-- **Foundation embeddings** — DINOv2 / cosine, DINOv3 / cosine.
+Selected suite: the local-feature rows above (classical, learned sparse, dense,
+FlexGlue) plus the DINOv2/DINOv3 foundation embeddings. Paper links are in the
+table.
 
 Notes:
 
-- ORB and AKAZE use BF-Hamming. FLANN needs LSH for binary descriptors;
-  KD-tree is for float descriptors such as SIFT.
-- OpenCV 5 moved AKAZE to `cv2.xfeatures2d`, so the project depends on
-  `opencv-contrib-python` rather than `opencv-python`.
+- ORB and AKAZE use BF-Hamming. [FLANN](https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html)
+  needs LSH for binary descriptors; KD-tree is for float descriptors such as
+  SIFT.
+- [OpenCV 5](https://docs.opencv.org/5.0/) moved AKAZE to `cv2.xfeatures2d`, so
+  the project depends on `opencv-contrib-python` rather than `opencv-python`.
 - SuperPoint/ALIKED and LightGlue weights are downloaded on first use to
   `~/.cache/torch/hub/checkpoints`. LightGlue uses `flash=False` by default for
   ROCm compatibility.
 - The `--ratio` flag applies to the classical ratio test. LightGlue uses its own
   match-score filter (`filter_threshold=0.1`).
-- SuperGlue's original implementation uses custom CUDA ops, so LightGlue is
-  the safer default on ROCm.
-- DINOv2 is best used for pruning / retrieval, not as the sole descriptor.
-  OmniGlue uses it as bilinearly interpolated per-keypoint guidance `g_i`,
-  while the final matching still uses refined SuperPoint `d_i`.
+- [SuperGlue](https://arxiv.org/abs/1911.11763)'s original implementation uses
+  custom CUDA ops, so [LightGlue](https://arxiv.org/abs/2306.13643) is the safer
+  default on ROCm.
+- [DINOv2](https://arxiv.org/abs/2304.07193) is best used for pruning /
+  retrieval, not as the sole descriptor. [OmniGlue](https://arxiv.org/abs/2405.12979)
+  uses it as bilinearly interpolated per-keypoint guidance `g_i`, while the
+  final matching still uses refined [SuperPoint](https://arxiv.org/abs/1712.07629)
+  `d_i`.
 - Fine-tuning candidates: OmniGlue low-shot adaptation, LightGlue/SuperPoint
   on synthetic homographies, DINOv2 probes/adapters, and person-search models
-  on CUHK-SYSU.
+  on [CUHK-SYSU](https://github.com/ShuangLI59/person_search).
 
 ## Datasets
 
@@ -271,8 +275,9 @@ A ~1.9 GB `.venv` is created; make sure you have disk headroom. On WSL2, run
 
 FlickrLogos-32 is the first dataset. The official download requires an email
 request, so `prepare_flickrlogos32.py` instead pulls the 2,240 positive
-FlickrLogos-32 images from the public `Voxel51/OpenLogo` mirror and rebuilds
-the 32 logo classes.
+FlickrLogos-32 images from the public
+[`Voxel51/OpenLogo`](https://huggingface.co/datasets/Voxel51/OpenLogo) mirror
+and rebuilds the 32 logo classes.
 
 ```bash
 make data-flickr
@@ -359,11 +364,12 @@ cross-class negatives instead of the original 3,000 no-logo images.
 | ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
 | AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
 
-For reference, Efe et al. 2021 report SIFT MMA@3 / HEA@3 of 0.87 / 0.76,
-ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their protocol uses tuned ratio tests,
-mutual nearest neighbors, 108 sequences, and OpenCV 4.5.2, so exact agreement
-is not expected. The values are in the expected range, and the full report
-includes the literature table plus per-split metrics.
+For reference, [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT
+MMA@3 / HEA@3 of 0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their
+protocol uses tuned ratio tests, mutual nearest neighbors, 108 sequences, and
+[OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
+expected. The values are in the expected range, and the full report includes the
+literature table plus per-split metrics.
 
 Adding another matcher only requires registering it in `MODELS` and running the
 same command — no separate validation script.
@@ -444,6 +450,46 @@ Return to the latest state with `git checkout main`.
 
 - [`docs/devnotes/week1-devnotes.md`](docs/devnotes/week1-devnotes.md) — design notes and bibliography
 - [`docs/rocm-setup.md`](docs/rocm-setup.md) — ROCm / WSL2 environment guide
+- [References](#references) — model, dataset, and software citations
+
+## References
+
+### Models and matching
+
+- D. G. Lowe. 2004. **Distinctive Image Features from Scale-Invariant Keypoints.** *IJCV*. [doi](https://doi.org/10.1023/B:VISI.0000029664.99615.94)
+- E. Rublee, V. Rabaud, K. Konolige, G. Bradski. 2011. **ORB: An Efficient Alternative to SIFT or SURF.** *ICCV*. [doi](https://doi.org/10.1109/ICCV.2011.6126544)
+- P. F. Alcantarilla, J. Nuevo, A. Bartoli. 2013. **Fast Explicit Diffusion for Accelerated Features in Nonlinear Scale Spaces.** *BMVC*. [doi](https://doi.org/10.5244/C.27.13)
+- D. DeTone, T. Malisiewicz, A. Rabinovich. 2018. **SuperPoint: Self-Supervised Interest Point Detection and Description.** *CVPR Workshops*. [arXiv](https://arxiv.org/abs/1712.07629)
+- P.-E. Sarlin, D. DeTone, T. Malisiewicz, A. Rabinovich. 2020. **SuperGlue: Learning Feature Matching with Graph Neural Networks.** *CVPR*. [arXiv](https://arxiv.org/abs/1911.11763)
+- P. Lindenberger, P.-E. Sarlin, M. Pollefeys. 2023. **LightGlue: Local Feature Matching at Light Speed.** *ICCV*. [arXiv](https://arxiv.org/abs/2306.13643)
+- X. Zhao, X. Wu, J. Miao, W. Chen, P. C. Y. Chen, Z. Li. 2023. **ALIKED: A Lighter Keypoint and Descriptor Extraction Network via Deformable Transformation.** *IEEE TIM*. [arXiv](https://arxiv.org/abs/2304.03608)
+- H. Jiang, A. Karpur, B. Cao, Q. Huang, A. Araujo. 2024. **OmniGlue: Generalizable Feature Matching with Foundation Model Guidance.** *CVPR*. [arXiv](https://arxiv.org/abs/2405.12979)
+- G. Potje, F. Cadar, A. Araujo, R. Martins, E. R. Nascimento. 2024. **XFeat: Accelerated Features for Lightweight Image Matching.** *CVPR*. [arXiv](https://arxiv.org/abs/2404.19174)
+- J. Sun, Z. Shen, Y. Wang, H. Bao, X. Zhou. 2021. **LoFTR: Detector-Free Local Feature Matching with Transformers.** *CVPR*. [arXiv](https://arxiv.org/abs/2104.00680)
+- J. Edstedt, Q. Sun, G. Bökman, M. Wadenbäck, M. Felsberg. 2024. **RoMa: Robust Dense Feature Matching.** *CVPR*. [arXiv](https://arxiv.org/abs/2305.15404)
+- J. Edstedt, D. Nordström, Y. Zhang, et al. 2026. **RoMa v2: Harder Better Faster Denser Feature Matching.** *ECCV*. [arXiv](https://arxiv.org/abs/2511.15706)
+- P. Lindenberger, P.-E. Sarlin, O. Miksik, M. Pollefeys. 2026. **FlexGlue: Sparse-to-Dense Feature Matching and Visual Disambiguation.** *arXiv*. [arXiv](https://arxiv.org/abs/2610.32976)
+- M. Oquab, T. Darcet, T. Moutakanni, et al. 2024. **DINOv2: Learning Robust Visual Features without Supervision.** *TMLR*. [arXiv](https://arxiv.org/abs/2304.07193)
+- O. Siméoni, H. V. Vo, M. Seitzer, et al. 2025. **DINOv3.** *arXiv*. [arXiv](https://arxiv.org/abs/2508.10104)
+
+### Geometry
+
+- M. A. Fischler, R. C. Bolles. 1981. **Random Sample Consensus.** *CACM*. [doi](https://doi.org/10.1145/358669.358692)
+- R. Toldo, A. Fusiello. 2008. **Robust Multiple Structures Estimation with J-Linkage.** *ECCV*. [doi](https://doi.org/10.1007/978-3-540-88682-2_41)
+
+### Datasets
+
+- V. Balntas, K. Lenc, A. Vedaldi, K. Mikolajczyk. 2017. **HPatches.** *CVPR*. [arXiv](https://arxiv.org/abs/1704.05939)
+- S. Romberg, L. G. Pueyo, R. Lienhart, R. van Zwol. 2011. **Scalable Logo Recognition in Real-World Images.** *ICMR*. [doi](https://doi.org/10.1145/1991996.1992028)
+- T. Xiao, S. Li, B. Wang, L. Lin, X. Wang. 2017. **Joint Detection and Identification Feature Learning for Person Search.** *CVPR*. [arXiv](https://arxiv.org/abs/1604.01850)
+- X.-S. Wei, Q. Cui, L. Yang, P. Wang, L. Liu. 2019. **RPC: A Large-Scale Retail Product Checkout Dataset.** *arXiv*. [arXiv](https://arxiv.org/abs/1901.07249)
+
+### Software
+
+- [OpenCV](https://opencv.org/) · [OpenCV 5 docs](https://docs.opencv.org/5.0/)
+- [PyTorch](https://pytorch.org/) · [ROCm](https://rocm.docs.amd.com/)
+- [Kornia](https://kornia.github.io/) · [FAISS](https://github.com/facebookresearch/faiss)
+- [Voxel51/OpenLogo](https://huggingface.co/datasets/Voxel51/OpenLogo) · [uv](https://docs.astral.sh/uv/)
 
 ## License
 

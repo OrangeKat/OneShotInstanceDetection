@@ -7,6 +7,9 @@
 > **Project arc.** Benchmark current solutions → diagnose failure modes → build
 > the final pipeline / full model → publish a full report. One devlog per week,
 > published on LinkedIn and kept in this folder.
+>
+> **References.** Paper, dataset, and software links are inline or in
+> [§7 Bibliography](#7-bibliography).
 
 ## Contents
 
@@ -261,10 +264,12 @@ Allowed, but not training from scratch:
 
 These values sit in the expected range for a training-free one-shot matcher:
 SIFT is strongest, AKAZE is second, ORB is fastest but weakest. They are below
-supervised FlickrLogos-32 detectors (~0.84–0.87 mAP; Zhang et al. 2021) and
-trained few-shot models (~0.57–0.67 mAP; Fehervari & Appalaraju 2019;
-Bhunia et al. 2019), which is expected without training or the official
-multi-reference split.
+supervised FlickrLogos-32 detectors (~0.84–0.87 mAP;
+[Zhang et al. 2021](https://arxiv.org/abs/2108.13775)) and trained few-shot
+models (~0.57–0.67 mAP;
+[Fehervari & Appalaraju 2019](https://arxiv.org/abs/1811.08009);
+[Bhunia et al. 2019](https://arxiv.org/abs/1811.01395)), which is expected
+without training or the official multi-reference split.
 
 ### 6.5 Failure analysis
 

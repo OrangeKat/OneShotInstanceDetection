@@ -5,6 +5,9 @@
 >
 > **Project arc.** Benchmark current solutions → diagnose failure modes → build
 > the final pipeline / full model → publish a full report.
+>
+> **References.** Paper, dataset, and software links are inline or in
+> [§6 References](#6-references).
 
 ## 1. What Changed
 
@@ -15,8 +18,9 @@
   metrics, and the Markdown report.
 - Added `scripts/prepare_hpatches.py` for the sequence download and box-AP
   manifest.
-- Added SuperPoint + LightGlue and ALIKED + LightGlue, using vendored LightGlue
-  components and the same `FeatureMatcher` interface.
+- Added SuperPoint + LightGlue and ALIKED + LightGlue, using vendored
+  [LightGlue](https://github.com/cvg/LightGlue) components and the same
+  `FeatureMatcher` interface.
 - Added failure analysis over the FlickrLogos-32 results: per-class, logo-size,
   multi-instance, confidence, and latency breakdowns.
 
@@ -46,10 +50,11 @@ simple ratio test at 0.75, RANSAC threshold 3 px.
 | ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
 | AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
 
-Efe et al. 2021 report SIFT MMA@3 / HEA@3 of 0.87 / 0.76, ORB 0.68 / 0.40, and
-AKAZE 0.80 / 0.65. Their protocol uses tuned ratio tests, mutual nearest
-neighbors, 108 sequences, and OpenCV 4.5.2, so exact agreement is not expected.
-The values are in the expected range.
+[Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT MMA@3 / HEA@3 of
+0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their protocol uses tuned
+ratio tests, mutual nearest neighbors, 108 sequences, and
+[OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
+expected. The values are in the expected range.
 
 Per split, viewpoint is harder than illumination for homography accuracy:
 
@@ -67,14 +72,14 @@ in keypoint budget, resize, RANSAC vs DLT, and error thresholds.
 
 | Model | HPatches metric | Published value | Source |
 |---|---|---|---|
-| SIFT | MMA@3 / HEA@3 | 0.87 / 0.76 | Efe et al. 2021 |
-| ORB | MMA@3 / HEA@3 | 0.68 / 0.40 | Efe et al. 2021 |
-| AKAZE | MMA@3 / HEA@3 | 0.80 / 0.65 | Efe et al. 2021 |
-| SuperPoint + LightGlue | AUC@3/5/10 px | 54.2 / 68.3 / 81.5 | SOTA2 leaderboard |
-| ALIKED + LightGlue | AUC@3/5/10 px | 66.2 / 76.9 / 86.3 | FlexGlue, Table 2 |
-| LoFTR | AUC@3/5/10 px | 65.9 / 75.6 / 84.6 | SOTA2 leaderboard |
-| RoMa | AUC@1/3/5 px (RANSAC) | 44.7 / 72.6 / 81.4 | MV-RoMa, Table 1 |
-| FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | FlexGlue, Table 2 |
+| SIFT | MMA@3 / HEA@3 | 0.87 / 0.76 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
+| ORB | MMA@3 / HEA@3 | 0.68 / 0.40 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
+| AKAZE | MMA@3 / HEA@3 | 0.80 / 0.65 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
+| SuperPoint + LightGlue | AUC@3/5/10 px | 54.2 / 68.3 / 81.5 | [SOTA2 leaderboard](https://www.sota2.com/research/sota/homography-estimation-on-hpatches) |
+| ALIKED + LightGlue | AUC@3/5/10 px | 66.2 / 76.9 / 86.3 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
+| LoFTR | AUC@3/5/10 px | 65.9 / 75.6 / 84.6 | [SOTA2 leaderboard](https://www.sota2.com/research/sota/homography-estimation-on-hpatches) |
+| RoMa | AUC@1/3/5 px (RANSAC) | 44.7 / 72.6 / 81.4 | [MV-RoMa, Table 1](https://arxiv.org/abs/2603.27542) |
+| FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
 | DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches matcher |
 
 Notes:
