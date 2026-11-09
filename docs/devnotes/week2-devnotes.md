@@ -4,9 +4,9 @@
 > and added a failure-analysis pass over the FlickrLogos-32 results.
 >
 > **Trace vs development.** §1–§2 and §4 are the initial implementation trace
-> and are kept unchanged. §3.1–§3.2 are the original expected-vs-actual
-> comparison; [§3.3](#33-reproducing-the-published-hpatches-values-2026-11-09)
-> records the later reproduction work. §5 lists references.
+> and are kept unchanged. §3.1 is the original expected-vs-actual comparison;
+> [§3.2](#32-reproducing-the-published-hpatches-values-2026-11-09) records the
+> later reproduction work. §5 lists references.
 >
 > **Project arc.** Benchmark current solutions → diagnose failure modes → build
 > the final pipeline / full model → publish a full report.
@@ -49,7 +49,7 @@ make hpatches
 **Initial implementation trace (2026-11-09).** This is the first complete
 eight-model run. It uses the harness as originally written: native image
 resolution, raw-pixel thresholds, and a fixed 3 px RANSAC threshold. The numbers
-are preserved as-is; the protocol audit and re-measurement are in §3.3.
+are preserved as-is; the protocol audit and re-measurement are in §3.2.
 
 **Protocol.** 116 sequences, 580 reference/target pairs, 2,048 keypoints
 (or correspondences for dense matchers), RANSAC threshold 3 px. Classical
@@ -128,7 +128,6 @@ error thresholds.
 | LoFTR | Official LoFTR (MegaDepth) | Precision / RANSAC AUC@1/5 | 92.7 / 41.5 / 78.8 | [LightGlue, Table 1](https://arxiv.org/abs/2306.13643) |
 | RoMa | Official RoMa v1 | RANSAC AUC@1/3/5 px | 44.7 / 72.6 / 81.4 | [MV-RoMa, Table 1](https://arxiv.org/abs/2603.27542) |
 | FlexGlue | Official FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
-| DINOv2 / DINOv3 | Base ViT features + cosine | MMA / HEA | n/a | no standard HPatches matcher |
 
 Notes:
 
@@ -140,15 +139,12 @@ Notes:
 - The classical values use MMA/HEA at 3 px with tuned ratio tests, mutual
   nearest neighbors, and 108 sequences. Our harness uses a simple ratio test at
   0.75 and all 116 sequences, so the classical numbers should be lower.
-- DINOv2 and DINOv3 are foundation embeddings rather than standard HPatches
-  matchers. No base-model HPatches sequence result exists; their numbers will
-  only be comparable within this project.
 
 ### 3.1 Expected vs actual — implemented models
 
 Only metrics that exist on both sides are compared. The Δ column mixes source
 protocols and overstates the gap; see
-[§3.3](#33-reproducing-the-published-hpatches-values-2026-11-09) for the audit.
+[§3.2](#32-reproducing-the-published-hpatches-values-2026-11-09) for the audit.
 
 | Model | Metric | Expected | Actual | Δ |
 |---|---|---:|---:|---:|
@@ -195,17 +191,7 @@ Observations:
 - The measured AUC should be used for relative comparison inside this harness,
   not as a claim that the published AUC was reproduced.
 
-### 3.2 Expected vs actual — not yet measured
-
-LoFTR, RoMa, and FlexGlue are now implemented and measured, so their
-expected-vs-actual rows moved to [§3.1](#31-expected-vs-actual--implemented-models).
-Only the foundation-embedding baselines remain unmeasured.
-
-| Model | Expected metric | Expected | Status |
-|---|---|---|---|
-| DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches result |
-
-### 3.3 Reproducing the published HPatches values (2026-11-09)
+### 3.2 Reproducing the published HPatches values (2026-11-09)
 
 Added after the initial trace; §2 stays as the recorded baseline.
 
@@ -295,7 +281,7 @@ column is a rough sanity check, not a reproduction error.
   those as the baseline, keeping §2 as the trace.
 - Rerun RoMa with `sample(..., 5000)` balanced sampling and a normalized RANSAC
   threshold.
-- Record each later harness or model change as a dated entry under §3.3.
+- Record each later harness or model change as a dated entry under §3.2.
 
 ## 4. FlickrLogos-32 Failure Analysis
 
