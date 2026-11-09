@@ -3,6 +3,8 @@ r"""Detection — benchmark entry point.
 Usage:
     uv run python main.py --manifest data/flickrlogos32/manifest.json \\
         --models sift orb akaze --output outputs/flickrlogos32
+    uv run python main.py --protocol hpatches \\
+        --models sift orb akaze --output outputs/hpatches
 
 The implementation lives in :mod:`src.pipeline`.
 """

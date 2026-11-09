@@ -1,8 +1,10 @@
-r"""Benchmark pipeline for one-shot instance detection.
+r"""Benchmark pipeline for one-shot instance detection and matcher validation.
 
 Usage:
     uv run python -m src.pipeline --manifest data/flickrlogos32/manifest.json \\
         --models sift orb akaze --output outputs/flickrlogos32
+    uv run python -m src.pipeline --protocol hpatches \\
+        --models sift orb akaze --output outputs/hpatches
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import json
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from logging import Logger
 from pathlib import Path
 
 import cv2
@@ -21,6 +24,8 @@ from src.models.feature_matching import AKAZEMatcher, ORBMatcher, SIFTMatcher
 from src.models.feature_matching.base import FeatureMatcher, MatchResult
 from src.utils.dataset import Box, InstanceDataset, InstanceSample
 from src.utils.logger import get_logger
+from src.validation.hpatches import evaluate_model, load_pairs
+from src.validation.report import render_report
 
 __all__ = ["main"]
 
@@ -361,6 +366,31 @@ def write_reports(
     return json_path, markdown_path
 
 
+def write_hpatches_reports(
+    reports: Sequence[dict[str, object]],
+    config: dict[str, object],
+    output: Path,
+) -> tuple[Path, Path]:
+    """Write HPatches JSON and Markdown reports.
+
+    Args:
+        reports: Per-model HPatches metrics.
+        config: Run configuration.
+        output: Output directory.
+
+    Returns:
+        The JSON and Markdown paths.
+    """
+    output.mkdir(parents=True, exist_ok=True)
+    json_path = output / "results.json"
+    json_path.write_text(
+        json.dumps({"config": config, "models": reports}, indent=2) + "\n"
+    )
+    markdown_path = output / "results.md"
+    markdown_path.write_text(render_report(reports, config))
+    return json_path, markdown_path
+
+
 def _markdown(
     reports: Sequence[dict[str, object]],
     config: dict[str, object],
@@ -410,15 +440,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         The parsed namespace.
     """
     parser = argparse.ArgumentParser(
-        description="One-shot instance detection benchmark."
+        description="One-shot instance detection benchmark and matcher validation."
+    )
+    parser.add_argument(
+        "--protocol",
+        choices=["box", "hpatches"],
+        default="box",
+        help="Benchmark protocol: box AP or native HPatches metrics.",
     )
     parser.add_argument(
         "--manifest",
         type=Path,
-        required=True,
-        help="JSON or JSONL manifest.",
+        help="JSON or JSONL manifest. Required for the box protocol.",
     )
     parser.add_argument("--root", type=Path, help="Base directory for manifest paths.")
+    parser.add_argument(
+        "--hpatches-dir",
+        type=Path,
+        default=Path("data/hpatches"),
+        help="Directory containing hpatches-sequences-release.",
+    )
     parser.add_argument(
         "--models",
         nargs="+",
@@ -432,12 +473,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=Path("outputs/benchmark"),
         help="Output directory for results.json and results.md.",
     )
-    parser.add_argument("--max-samples", type=int, help="Limit the number of samples.")
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        help="Limit samples (box) or pairs (HPatches).",
+    )
     parser.add_argument(
         "--iou-threshold",
         type=float,
         default=0.5,
-        help="IoU threshold for a hit.",
+        help="IoU threshold for a hit in the box protocol.",
     )
     parser.add_argument(
         "--ransac-threshold",
@@ -484,16 +529,46 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = parse_args(argv)
     log = get_logger(__name__)
+    names = _selected_models(args.models)
 
+    if args.protocol == "hpatches":
+        reports, config = _run_hpatches(args, names, log)
+        json_path, markdown_path = write_hpatches_reports(reports, config, args.output)
+    else:
+        if args.manifest is None:
+            raise SystemExit("error: --manifest is required for the box protocol")
+        reports, config = _run_box(args, names, log)
+        json_path, markdown_path = write_reports(reports, config, args.output)
+
+    log.info("wrote %s", json_path)
+    log.info("wrote %s", markdown_path)
+    return 0
+
+
+def _run_box(
+    args: argparse.Namespace,
+    names: Sequence[str],
+    log: Logger,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Run the box-AP benchmark.
+
+    Args:
+        args: Parsed arguments.
+        names: Model names.
+        log: Logger.
+
+    Returns:
+        Reports and config.
+    """
     dataset = InstanceDataset(args.manifest, root=args.root)
     samples = list(dataset)
     if args.max_samples is not None:
         samples = samples[: args.max_samples]
 
-    names = _selected_models(args.models)
     config: dict[str, object] = {
+        "protocol": "box",
         "manifest": str(args.manifest),
-        "models": names,
+        "models": list(names),
         "samples": len(samples),
         "iou_threshold": args.iou_threshold,
         "max_keypoints": args.max_keypoints,
@@ -502,12 +577,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     reports: list[dict[str, object]] = []
     for name in names:
-        matcher = MODELS[name](
-            max_keypoints=args.max_keypoints,
-            ratio=args.ratio,
-            ransac_threshold=args.ransac_threshold,
+        report = run_benchmark(
+            _make_matcher(name, args),
+            samples,
+            args.iou_threshold,
         )
-        report = run_benchmark(matcher, samples, args.iou_threshold)
         reports.append(report)
         latency = report["latency_ms"]
         log.info(
@@ -518,11 +592,73 @@ def main(argv: Sequence[str] | None = None) -> int:
             report["mean_iou"],
             latency["p50"],
         )
+    return reports, config
 
-    json_path, markdown_path = write_reports(reports, config, args.output)
-    log.info("wrote %s", json_path)
-    log.info("wrote %s", markdown_path)
-    return 0
+
+def _run_hpatches(
+    args: argparse.Namespace,
+    names: Sequence[str],
+    log: Logger,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Run native HPatches validation.
+
+    Args:
+        args: Parsed arguments.
+        names: Model names.
+        log: Logger.
+
+    Returns:
+        Reports and config.
+    """
+    sequences_dir = args.hpatches_dir / "hpatches-sequences-release"
+    if not sequences_dir.exists():
+        raise SystemExit(
+            f"missing HPatches sequences: {sequences_dir}\n"
+            "run: uv run python scripts/prepare_hpatches.py"
+        )
+    pairs = load_pairs(sequences_dir, limit=args.max_samples)
+    if not pairs:
+        raise SystemExit(f"no HPatches pairs found under {sequences_dir}")
+
+    config: dict[str, object] = {
+        "protocol": "hpatches",
+        "sequences_dir": str(sequences_dir),
+        "sequences": len({pair.sequence for pair in pairs}),
+        "pairs": len(pairs),
+        "models": list(names),
+        "max_keypoints": args.max_keypoints,
+        "ratio": args.ratio,
+        "ransac_threshold": args.ransac_threshold,
+    }
+    reports: list[dict[str, object]] = []
+    for name in names:
+        report = evaluate_model(_make_matcher(name, args), pairs)
+        reports.append(report)
+        log.info(
+            "%s: MMA@3=%s HEA@3=%s median_CE=%s",
+            name,
+            report["mma"]["3"],
+            report["hea"]["3"],
+            report["corner_error"]["median"],
+        )
+    return reports, config
+
+
+def _make_matcher(name: str, args: argparse.Namespace) -> FeatureMatcher:
+    """Construct a matcher from CLI settings.
+
+    Args:
+        name: Model name.
+        args: Parsed arguments.
+
+    Returns:
+        A configured matcher.
+    """
+    return MODELS[name](
+        max_keypoints=args.max_keypoints,
+        ratio=args.ratio,
+        ransac_threshold=args.ransac_threshold,
+    )
 
 
 if __name__ == "__main__":
