@@ -17,7 +17,9 @@ def main() -> None:
     import torch
 
     print(f"torch            : {torch.__version__}")
-    print(f"torch.version.hip: {torch.version.hip}   (set => ROCm/HIP build, None => CUDA build)")
+    print(
+        f"torch.version.hip: {torch.version.hip}   (set => ROCm/HIP build, None => CUDA build)"
+    )
     print(f"platform         : {platform.system()} / {platform.machine()}")
     print(f"device           : {'cuda' if torch.cuda.is_available() else 'cpu'}")
 
@@ -44,13 +46,19 @@ def main() -> None:
     print(f"visible GPUs     : {n}")
     for i in range(n):
         props = torch.cuda.get_device_properties(i)
-        vram = props.total_memory / (1024 ** 3)
-        print(f"  [{i}] {props.name}  ({vram:.1f} GiB, SM{props.multi_processor_count if hasattr(props, 'multi_processor_count') else '?'}, "
-              f"gfx={getattr(props, 'gcnArchName', 'n/a')})")
+        vram = props.total_memory / (1024**3)
+        print(
+            f"  [{i}] {props.name}  ({vram:.1f} GiB, SM{props.multi_processor_count if hasattr(props, 'multi_processor_count') else '?'}, "
+            f"gfx={getattr(props, 'gcnArchName', 'n/a')})"
+        )
 
     # Bring up runtime + one matmul on device 0.
     device = "cuda:0"
-    print(f"  a 4096x4096 matmul on {torch.cuda.get_device_name(0)}...", end="", flush=True)
+    print(
+        f"  a 4096x4096 matmul on {torch.cuda.get_device_name(0)}...",
+        end="",
+        flush=True,
+    )
     a = torch.randn(4096, 4096, device=device)
     b = torch.randn(4096, 4096, device=device)
     torch.cuda.synchronize()

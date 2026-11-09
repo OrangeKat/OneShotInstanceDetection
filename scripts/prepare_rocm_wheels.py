@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import email.parser as email_parser
 import hashlib
 import io
 import re
@@ -33,7 +34,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-import email.parser as email_parser
 from pathlib import Path
 
 AMD_INDEX = "https://stable.repo.amd.com/rocm/whl-next/"
@@ -59,7 +59,7 @@ RETAGGED_TAG = "manylinux_2_28_x86_64"
 VENDOR_DIR = Path(__file__).resolve().parent.parent / "vendor" / "pytorch-rocm"
 TMP_DIR = VENDOR_DIR / "_downloads"
 
-_INDEX_CACHE: dict[str, dict[str, str]] = {}   # norm pkg -> filename -> href
+_INDEX_CACHE: dict[str, dict[str, str]] = {}  # norm pkg -> filename -> href
 
 
 def norm(name: str) -> str:
@@ -108,7 +108,7 @@ def _pick_wheel(pkg: str, version_spec: str | None) -> tuple[str, str] | None:
     Handles PEP 625 dist names: index filenames may use underscores while
     the normalized package name uses dashes.
     """
-    cand: list[tuple[str, str, bool]] = []   # (version, fname, is_linux)
+    cand: list[tuple[str, str, bool]] = []  # (version, fname, is_linux)
     for f in _index(pkg):
         parts = f[:-4].split("-")
         if len(parts) < 5:
@@ -117,14 +117,13 @@ def _pick_wheel(pkg: str, version_spec: str | None) -> tuple[str, str] | None:
         abi, plat = parts[-2], parts[-1]
         if norm(dist) != norm(pkg):
             continue
-        if plat == LEGACY_TAG:                       # e.g. cp312-cp312-…, py3-none-…
+        if plat == LEGACY_TAG:  # e.g. cp312-cp312-…, py3-none-…
             cand.append((urllib.parse.unquote(ver), f, True))
-        elif abi == "none" and plat == "any":        # portable mirror
+        elif abi == "none" and plat == "any":  # portable mirror
             cand.append((urllib.parse.unquote(ver), f, False))
     if not cand:
         return None
     files = [f for _, f, _ in cand]
-    linux = {f for _, f, is_linux in cand if is_linux}
 
     def matched_version(f: str) -> str | None:
         for ver, fname, _ in cand:
@@ -138,15 +137,20 @@ def _pick_wheel(pkg: str, version_spec: str | None) -> tuple[str, str] | None:
         if exact:
             files = exact
         else:
-            print(f"  [warn] {pkg}=={version_spec} not found on AMD index; "
-                  "falling back to newest")
+            print(
+                f"  [warn] {pkg}=={version_spec} not found on AMD index; "
+                "falling back to newest"
+            )
+
     def vkey(f: str) -> tuple:
         ver = matched_version(f)
         head, *local = ver.split("+")
         nums = tuple(int(x) for x in re.findall(r"\d+", head)[:3])
         loc_nums = tuple(int(x) for x in re.findall(r"\d+", ".".join(local)) or (0,))
         return (nums, loc_nums)  # prefer local builds (+rocm…), higher first
+
     files.sort(key=vkey, reverse=True)
+
     # Preference: binary-for-cp312 > other-py linux builds > portable.
     def abi_rank(f: str) -> tuple[bool, bool]:
         parts = f[:-4].split("-")
@@ -154,6 +158,7 @@ def _pick_wheel(pkg: str, version_spec: str | None) -> tuple[str, str] | None:
         is_linux = plat == LEGACY_TAG
         cp312 = abi == PY_TAG and parts[-3] == PY_TAG
         return (cp312, is_linux)
+
     files_by_pref = sorted(files, key=abi_rank, reverse=True)
     chosen = files_by_pref[0]
     return chosen, _index(pkg)[chosen]
@@ -186,13 +191,18 @@ def _resolve_store_url(claimed: str) -> str:
         return claimed
     tails = [tail]
     if tail.startswith("whl-next/"):
-        body = tail[len("whl-next/"):]
-        tails = [f"whl-next/{body}", f"pytorch/whl-next/{body}", f"core/whl-next/{body}"]
+        body = tail[len("whl-next/") :]
+        tails = [
+            f"whl-next/{body}",
+            f"pytorch/whl-next/{body}",
+            f"core/whl-next/{body}",
+        ]
     for t in tails:
         cand = head + "/rocm/" + t
         try:
             req = urllib.request.Request(
-                cand, headers={"Range": "bytes=0-0", "User-Agent": "prepare-rocm-wheels/2"}
+                cand,
+                headers={"Range": "bytes=0-0", "User-Agent": "prepare-rocm-wheels/2"},
             )
             with urllib.request.urlopen(req, timeout=30) as r:
                 if 200 <= r.status < 300:
@@ -243,7 +253,7 @@ def _synthesize_rocm(version: str, device_family: str) -> Path:
         "Requires-Python: >=3",
         f"Requires-Dist: rocm-sdk-core ~= {version}",
         f'Requires-Dist: rocm-sdk-libraries ~= {version}; extra == "libraries"',
-        f'Requires-Dist: rocm-sdk-device-{device_family} ~= {version};'
+        f"Requires-Dist: rocm-sdk-device-{device_family} ~= {version};"
         f' extra == "device-{device_family}"',
         "Provides-Extra: libraries",
         f"Provides-Extra: device-{device_family}",
@@ -288,9 +298,7 @@ def _write_minimal_wheel(
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, data in sorted(files.items()):
             zf.writestr(name, data)
-            records.append(
-                (name, _b64(hashlib.sha256(data).digest()), len(data))
-            )
+            records.append((name, _b64(hashlib.sha256(data).digest()), len(data)))
         record = io.StringIO()
         writer = csv.writer(record, lineterminator="\n")
         for row in sorted(records):
@@ -312,10 +320,12 @@ def _process(pkg: str, version_spec: str, dry: bool) -> list[tuple[str, str]] | 
     # hrefs on the AMD index are bare filenames relative to the package dir;
     # wheels live in store trees the listing path redirects into — resolve
     # that (see _resolve_store_url) rather than hard-coding one.
-    remote = _resolve_store_url(urllib.parse.urljoin(AMD_INDEX + norm(pkg) + "/", fname))
+    remote = _resolve_store_url(
+        urllib.parse.urljoin(AMD_INDEX + norm(pkg) + "/", fname)
+    )
     needs_retag = fname.endswith(f"-{LEGACY_TAG}.whl")
     if needs_retag:
-        out_name = fname[:-len(f"-{LEGACY_TAG}.whl")] + f"-{RETAGGED_TAG}.whl"
+        out_name = fname[: -len(f"-{LEGACY_TAG}.whl")] + f"-{RETAGGED_TAG}.whl"
     else:
         out_name = fname
     out_name = out_name.replace("%2B", "+")
@@ -332,7 +342,10 @@ def _process(pkg: str, version_spec: str, dry: bool) -> list[tuple[str, str]] | 
             TMP_DIR.mkdir(parents=True, exist_ok=True)
             tmp = TMP_DIR / (out_name + ".dl")
             print(f"[dl  ] {remote}")
-            with urllib.request.urlopen(remote, timeout=120) as r, open(tmp, "wb") as fdst:
+            with (
+                urllib.request.urlopen(remote, timeout=120) as r,
+                open(tmp, "wb") as fdst,
+            ):
                 shutil.copyfileobj(r, fdst)
             if needs_retag:
                 _retag(tmp, out_path)
@@ -375,7 +388,9 @@ def _retag(src: Path, dst: Path) -> None:
     """Stream-copy the wheel zip, patching WHEEL Tags and rewriting RECORD."""
     zf_src = zipfile.ZipFile(src)
     try:
-        dist_dir = next(n.split("/")[0] for n in zf_src.namelist() if ".dist-info/" in n)
+        dist_dir = next(
+            n.split("/")[0] for n in zf_src.namelist() if ".dist-info/" in n
+        )
         wheel_meta = f"{dist_dir}/WHEEL"
 
         # Patch WHEEL in memory (already-patched digest recorded below).
@@ -430,8 +445,12 @@ def main() -> int:
         pending.append((pkg, ver))
     # The synthesized rocm meta (below) pins the SDK wheels explicitly,
     # covering torch's `rocm[libraries]~=…` base requirement.
-    for sdk_pkg in ["rocm-sdk-core", "rocm-sdk-libraries",
-                    "rocm-sdk-device-gfx1100", "rocm-bootstrap"]:
+    for sdk_pkg in [
+        "rocm-sdk-core",
+        "rocm-sdk-libraries",
+        "rocm-sdk-device-gfx1100",
+        "rocm-bootstrap",
+    ]:
         pending.append((sdk_pkg, None))
     # torch's device extras are gated with `extra == "device-gfx1100"` and
     # not followed by the base-graph closure — vendor them explicitly, as
@@ -466,7 +485,9 @@ def main() -> int:
                 continue
             pending.append((dep_name, dep_ver))
 
-    print(f"\n{'plan' if args.plan else 'closure'} complete: {len(staged)} AMD packages staged in {VENDOR_DIR}")
+    print(
+        f"\n{'plan' if args.plan else 'closure'} complete: {len(staged)} AMD packages staged in {VENDOR_DIR}"
+    )
     if args.plan:
         return 0
     _synthesize_rocm("10.1.0", "gfx1100")
