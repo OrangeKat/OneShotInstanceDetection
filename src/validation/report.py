@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 
+from src.validation.hpatches import homography_auc
+
 THRESHOLDS = (1, 3, 5, 10)
 SPLIT_THRESHOLDS = (3, 5, 10)
 LITERATURE = {
@@ -39,6 +41,7 @@ def render_report(
     """
     mma_headers = " | ".join(f"MMA@{threshold}" for threshold in THRESHOLDS)
     hea_headers = " | ".join(f"HEA@{threshold}" for threshold in THRESHOLDS)
+    auc_headers = " | ".join(f"AUC@{threshold}" for threshold in THRESHOLDS)
     lines = [
         "# HPatches matcher validation",
         "",
@@ -55,12 +58,15 @@ def render_report(
         + mma_headers
         + " | "
         + hea_headers
+        + " | "
+        + auc_headers
         + " | Median CE |",
-        "|---|---:|---:|---:|" + "---:|" * (len(THRESHOLDS) * 2) + "---:|",
+        "|---|---:|---:|---:|" + "---:|" * (len(THRESHOLDS) * 3) + "---:|",
     ]
     for result in results:
         mma = result["mma"]
         hea = result["hea"]
+        auc = result["auc"]
         corner = result["corner_error"]
         lines.append(
             f"| {result['model']} | {result['pairs']} "
@@ -69,6 +75,8 @@ def render_report(
             + " | ".join(_fmt(mma[str(threshold)]) for threshold in THRESHOLDS)
             + " | "
             + " | ".join(_fmt(hea[str(threshold)]) for threshold in THRESHOLDS)
+            + " | "
+            + " | ".join(_fmt(auc[str(threshold)]) for threshold in THRESHOLDS)
             + f" | {_fmt(corner['median'])} |"
         )
 
@@ -100,8 +108,8 @@ def render_report(
             "## Per split",
             "",
             "| Model | Split | Pairs | MMA@3 | MMA@5 | MMA@10 "
-            "| HEA@3 | HEA@5 | HEA@10 |",
-            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+            "| HEA@3 | HEA@5 | HEA@10 | AUC@3 | AUC@5 | AUC@10 |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for result in results:
@@ -111,6 +119,10 @@ def render_report(
                 continue
             mma_cells = []
             hea_cells = []
+            auc = homography_auc(
+                [pair["corner_error"] for pair in subset],
+                SPLIT_THRESHOLDS,
+            )
             for threshold in SPLIT_THRESHOLDS:
                 mma = [
                     pair["mma"][str(threshold)]
@@ -124,11 +136,14 @@ def render_report(
                     for pair in subset
                 ]
                 hea_cells.append(_fmt(float(np.mean(hea)) if hea else None))
+            auc_cells = [_fmt(auc[str(threshold)]) for threshold in SPLIT_THRESHOLDS]
             lines.append(
                 f"| {result['model']} | {split} | {len(subset)} | "
                 + " | ".join(mma_cells)
                 + " | "
                 + " | ".join(hea_cells)
+                + " | "
+                + " | ".join(auc_cells)
                 + " |"
             )
 
@@ -144,6 +159,8 @@ def render_report(
             "the pixel threshold; missing homographies count as failures.",
             "- Corner error: mean Euclidean distance between the four reference "
             "corners projected by the ground-truth and estimated homographies.",
+            "- AUC@k: normalized area under the cumulative corner-error curve up "
+            "to k pixels. Missing homographies count as infinite error.",
             "- This run uses all 116 sequences, a simple ratio test at 0.75, and "
             "2,048 keypoints. The literature reference uses 108 sequences, "
             "mutual nearest neighbors with a bidirectional ratio test, tuned "

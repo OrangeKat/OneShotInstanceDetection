@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -165,6 +166,10 @@ def evaluate_model(
         "hea": {
             str(threshold): _mean(hea_values[threshold]) for threshold in thresholds
         },
+        "auc": homography_auc(
+            [pair["corner_error"] for pair in per_pair],
+            thresholds,
+        ),
         "corner_error": {
             "mean": float(np.mean(corner_errors)) if corner_errors else None,
             "median": float(np.median(corner_errors)) if corner_errors else None,
@@ -179,6 +184,37 @@ def evaluate_model(
         },
         "per_pair": per_pair,
     }
+
+
+def homography_auc(
+    corner_errors: Sequence[float | None],
+    thresholds: Sequence[int] = THRESHOLDS,
+) -> dict[str, float | None]:
+    """Compute homography AUC from per-pair corner errors.
+
+    Args:
+        corner_errors: Mean four-corner errors; ``None`` marks a missing
+            homography.
+        thresholds: Pixel thresholds for the cumulative error curve.
+
+    Returns:
+        AUC values keyed by threshold.
+    """
+    if not corner_errors:
+        return {str(threshold): None for threshold in thresholds}
+    errors = np.asarray(
+        [error if error is not None else np.inf for error in corner_errors],
+        dtype=np.float64,
+    )
+    result: dict[str, float | None] = {}
+    for threshold in thresholds:
+        if threshold <= 0:
+            result[str(threshold)] = None
+            continue
+        grid = np.linspace(0.0, float(threshold), 1001)
+        recall = (errors[:, None] <= grid[None, :]).mean(axis=0)
+        result[str(threshold)] = float(np.trapezoid(recall, grid) / threshold)
+    return result
 
 
 def corner_error(
