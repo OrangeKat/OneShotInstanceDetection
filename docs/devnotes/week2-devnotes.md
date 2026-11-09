@@ -80,35 +80,36 @@ Per split, viewpoint is harder than illumination for homography accuracy:
 
 ## 3. Expected HPatches Results for the Planned Suite
 
-This table lists published HPatches reference values for the models selected in
-week 1 §5.2. It is a sanity-check target, not one leaderboard: protocols differ
-in keypoint budget, resize, RANSAC vs DLT, and error thresholds.
+This table lists published HPatches reference values for the **released base
+models**, with no HPatches fine-tuning. It is a sanity-check target, not one
+leaderboard: protocols differ in keypoint budget, resize, RANSAC vs DLT, and
+error thresholds.
 
-| Model | HPatches metric | Published value | Source |
-|---|---|---|---|
-| SIFT | MMA@3 / HEA@3 | 0.87 / 0.76 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
-| ORB | MMA@3 / HEA@3 | 0.68 / 0.40 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
-| AKAZE | MMA@3 / HEA@3 | 0.80 / 0.65 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
-| SuperPoint + LightGlue | AUC@3/5/10 px | 54.2 / 68.3 / 81.5 | [SOTA2 leaderboard](https://www.sota2.com/research/sota/homography-estimation-on-hpatches) |
-| ALIKED + LightGlue | AUC@3/5/10 px | 66.2 / 76.9 / 86.3 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
-| LoFTR | AUC@3/5/10 px | 65.9 / 75.6 / 84.6 | [SOTA2 leaderboard](https://www.sota2.com/research/sota/homography-estimation-on-hpatches) |
-| RoMa | AUC@1/3/5 px (RANSAC) | 44.7 / 72.6 / 81.4 | [MV-RoMa, Table 1](https://arxiv.org/abs/2603.27542) |
-| FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
-| DINOv2 / DINOv3 | MMA / HEA | n/a | no standard HPatches matcher |
+| Model | Base weights / tuning | HPatches metric | Published value | Source |
+|---|---|---|---|---|
+| SIFT | OpenCV default, no training | MMA@3 / HEA@3 | 0.87 / 0.76 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
+| ORB | OpenCV default, no training | MMA@3 / HEA@3 | 0.68 / 0.40 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
+| AKAZE | OpenCV default, no training | MMA@3 / HEA@3 | 0.80 / 0.65 | [Efe et al. 2021](https://arxiv.org/abs/2108.08179) |
+| SuperPoint + LightGlue | Official SuperPoint + LightGlue (MegaDepth) | Recall / precision / RANSAC AUC@1/5 | 94.3 / 88.9 / 38.3 / 79.6 | [LightGlue, Table 1](https://arxiv.org/abs/2306.13643) |
+| ALIKED + LightGlue | Official ALIKED + LightGlue | AUC@3/5/10 px | 66.2 / 76.9 / 86.3 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
+| LoFTR | Official LoFTR (MegaDepth) | Precision / RANSAC AUC@1/5 | 92.7 / 41.5 / 78.8 | [LightGlue, Table 1](https://arxiv.org/abs/2306.13643) |
+| RoMa | Official RoMa v1 | RANSAC AUC@1/3/5 px | 44.7 / 72.6 / 81.4 | [MV-RoMa, Table 1](https://arxiv.org/abs/2603.27542) |
+| FlexGlue | Official FlexGlue | AUC@3/5/10 px | 72.9 / 81.9 / 89.8 | [FlexGlue, Table 2](https://arxiv.org/abs/2610.32976) |
+| DINOv2 / DINOv3 | Base ViT features + cosine | MMA / HEA | n/a | no standard HPatches matcher |
 
 Notes:
 
+- All learned rows use released pretrained weights and are **not fine-tuned on
+  HPatches**.
+- The metric column matters: classical rows use MMA/HEA, while the learned and
+  dense rows use each paper's native precision/recall or homography-AUC setup.
+  Do not compare values across different metrics.
 - The classical values use MMA/HEA at 3 px with tuned ratio tests, mutual
   nearest neighbors, and 108 sequences. Our harness uses a simple ratio test at
   0.75 and all 116 sequences, so the classical numbers should be lower.
-- The learned/dense rows report homography AUC, while the current HPatches
-  protocol reports MMA/HEA/corner error. To compare directly, add homography
-  AUC to the HPatches report or compare only within the same metric.
-- RoMa uses AUC@1/3/5 in its source, while the other learned rows use
-  AUC@3/5/10; do not compare across threshold sets.
-- DINOv2 and DINOv3 are project-specific foundation-embedding baselines. No
-  standard HPatches sequence result exists, so their numbers will only be
-  comparable within this project.
+- DINOv2 and DINOv3 are foundation embeddings rather than standard HPatches
+  matchers. No base-model HPatches sequence result exists; their numbers will
+  only be comparable within this project.
 
 ## 4. FlickrLogos-32 Failure Analysis
 
@@ -165,5 +166,3 @@ false positive, or true negative.
 - J. Lee, S. Kang, S. Yoo. 2026. **MV-RoMa: From Pairwise Matching into
   Multi-View Track Reconstruction.** *arXiv*.
   [arXiv](https://arxiv.org/abs/2603.27542)
-- SOTA2. **Homography estimation on HPatches leaderboard.**
-  [leaderboard](https://www.sota2.com/research/sota/homography-estimation-on-hpatches)
