@@ -390,7 +390,8 @@ cross-class negatives instead of the original 3,000 no-logo images.
 
 ## HPatches validation results
 
-116 sequences, 580 pairs, 2,048 keypoints, Lowe ratio 0.75.
+116 sequences, 580 pairs, 2,048 keypoints (or correspondences), Lowe ratio
+0.75. LoFTR and FlexGlue receive images with the long side capped at 640 px.
 
 | Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | AUC@1 | AUC@3 | AUC@5 | AUC@10 | Median CE |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -399,16 +400,21 @@ cross-class negatives instead of the original 3,000 no-logo images.
 | AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 0.134 | 0.362 | 0.479 | 0.627 | 2.025 px |
 | SuperPoint + LightGlue | 0.342 | 0.807 | 0.924 | 0.975 | 0.352 | 0.748 | 0.867 | 0.941 | 0.170 | 0.455 | 0.600 | 0.751 | 1.447 px |
 | ALIKED + LightGlue | 0.502 | 0.864 | 0.942 | 0.977 | 0.440 | 0.778 | 0.888 | 0.933 | 0.223 | 0.505 | 0.643 | 0.778 | 1.181 px |
+| LoFTR | 0.516 | 0.847 | 0.914 | 0.948 | 0.479 | 0.762 | 0.853 | 0.914 | 0.269 | 0.528 | 0.642 | 0.767 | 1.080 px |
+| RoMa | 0.703 | 0.937 | 0.976 | 0.990 | 0.248 | 0.548 | 0.684 | 0.828 | 0.110 | 0.324 | 0.445 | 0.606 | 2.445 px |
+| FlexGlue | 0.480 | 0.881 | 0.963 | 0.994 | 0.419 | 0.791 | 0.891 | 0.947 | 0.203 | 0.502 | 0.641 | 0.784 | 1.246 px |
 
 For reference, [Efe et al. 2021](https://arxiv.org/abs/2108.08179) report SIFT
 MMA@3 / HEA@3 of 0.87 / 0.76, ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their
 protocol uses tuned ratio tests, mutual nearest neighbors, 108 sequences, and
 [OpenCV 4.5.2](https://docs.opencv.org/4.5.2/), so exact agreement is not
 expected. The learned-model rows are project measurements under the same
-MMA/HEA/AUC protocol; published SuperPoint/ALIKED results use different
+MMA/HEA/AUC protocol; published results for those models use different
 homography-AUC settings, so compare them within the same metric. Measured AUC
 is lower than published values because of differences in resize, keypoint
-budget, RANSAC, and corner-error definition.
+budget, RANSAC, and corner-error definition. RoMa has the best MMA@3 but the
+weakest fitted homography: its dense correspondences are accurate, while corner
+extrapolation is less stable.
 
 Adding another matcher only requires registering it in `MODELS` and running the
 same command — no separate validation script.
