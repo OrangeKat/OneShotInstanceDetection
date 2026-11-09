@@ -8,7 +8,9 @@ instance in RGB query images. Not category detection, not tracking.
 ## Rules
 
 - Do not write implementation code unless the user explicitly asks.
-- Use only these datasets: FlickrLogos-32, CUHK-SYSU, Paris6k, RPC.
+- Use only these datasets: FlickrLogos-32, CUHK-SYSU, Paris6k, RPC, HPatches.
+- HPatches is used for matcher validation with MMA / HEA / corner error, not
+  detection AP.
 - RGB images only.
 - Training-free by default. Fine-tuning pretrained models is allowed.
   Training from scratch is out of scope.
@@ -36,6 +38,8 @@ uv run ruff format .
 uv run python scripts/gpu_check.py
 uv run python scripts/prepare_flickrlogos32.py
 uv run python main.py --manifest data/flickrlogos32/manifest.json
+uv run python scripts/prepare_hpatches.py
+uv run python main.py --protocol hpatches --output outputs/hpatches
 uv run python scripts/visualize_examples.py
 uv run python scripts/analyze_results.py
 ```

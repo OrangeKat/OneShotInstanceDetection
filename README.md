@@ -93,7 +93,7 @@ Notes:
 
 ## Datasets
 
-Four datasets cover four instance categories. No single benchmark covers all
+Five datasets cover four instance categories. No single benchmark covers all
 of them, and each has a different task and annotation format.
 
 | Category | Dataset | Task / annotations | Metric |
@@ -102,16 +102,20 @@ of them, and each has a different task and annotation format.
 | People | [CUHK-SYSU](https://github.com/ShuangLI59/person_search) | person search, boxes + IDs | mAP, top-1 |
 | Buildings | [Paris6k](https://www.robots.ox.ac.uk/~vgg/data/parisbuildings/) | retrieval, query ROIs | mAP, recall@k |
 | Objects | [RPC](https://arxiv.org/abs/1901.07249) | category-level product detection, boxes | mAP |
+| Validation | [HPatches](https://github.com/hpatches/hpatches-dataset) | planar pairs, homographies | MMA, HEA, corner error |
 
 Protocol notes:
 
 - Common protocol: reference crop → query image → predicted box → AP@0.5.
 - Paris6k: report mAP / recall@k, and project the query ROI through the
   estimated homography for a box IoU.
+- HPatches: matcher validation only; report MMA@1/3/5/10, HEA@1/3/5/10, and
+  corner error. Do not report detection AP for it.
 - Do not mix category-level and instance-level AP in one table.
 - Access: FlickrLogos-32 requires an email request (the prep script uses the
   public OpenLogo mirror); CUHK-SYSU requires a request form; Paris6k original
-  links may be dead; RPC is directly downloadable.
+  links may be dead; RPC is directly downloadable; HPatches is directly
+  downloadable.
 
 ## Evaluation
 
@@ -120,7 +124,7 @@ JSON plus Markdown. Size and memory accounting are planned.
 
 | Axis | Recorded now |
 |---|---|
-| Accuracy | hit rate at IoU@0.5, 11-point AP@0.5, mean IoU |
+| Accuracy | box protocol: hit rate at IoU@0.5, 11-point AP@0.5, mean IoU; HPatches: MMA, HEA, corner error |
 | Speed | per-pair latency mean / p50 / p95 |
 | Diagnostics | match count, RANSAC inlier count; keypoint budget in config |
 | Per-sample output | query, predicted box, GT boxes, hit, latency |
@@ -140,16 +144,23 @@ uv run python main.py \
   --manifest data/flickrlogos32/manifest.json \
   --models sift orb akaze \
   --output outputs/flickrlogos32
+
+uv run python main.py \
+  --protocol hpatches \
+  --models sift orb akaze \
+  --output outputs/hpatches
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--manifest` | required | JSON or JSONL reference/query manifest |
+| `--protocol` | `box` | `box` (AP@0.5) or `hpatches` (MMA/HEA/corner error) |
+| `--manifest` | required for `box` | JSON or JSONL reference/query manifest |
 | `--root` | manifest directory | base directory for relative paths |
+| `--hpatches-dir` | `data/hpatches` | directory containing `hpatches-sequences-release` |
 | `--models` | `all` | `sift`, `orb`, `akaze`, `all` |
 | `--output` | `outputs/benchmark` | directory for `results.json` and `results.md` |
-| `--max-samples` | all | limit the number of pairs |
-| `--iou-threshold` | `0.5` | IoU threshold for a hit |
+| `--max-samples` | all | limit samples (box) or pairs (HPatches) |
+| `--iou-threshold` | `0.5` | IoU threshold for a box hit |
 | `--ransac-threshold` | `3.0` | RANSAC reprojection threshold in pixels |
 | `--max-keypoints` | `2048` | keypoint budget per image |
 | `--ratio` | `0.75` | Lowe ratio-test threshold |
@@ -199,9 +210,11 @@ Each record is one reference/query pair:
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
 | `src/utils/logger.py` | stderr logger helper |
 | `src/analysis/` | failure-analysis data, metrics, plots, and report helpers |
+| `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics, and report |
 | `main.py` | benchmark CLI entry point; delegates to `src/pipeline.py` |
 | `scripts/prepare_rocm_wheels.py` | retags + vendors AMD's legacy-tagged ROCm wheel closure for `uv lock` |
 | `scripts/prepare_flickrlogos32.py` | downloads the FlickrLogos-32 subset from OpenLogo and writes the benchmark manifest |
+| `scripts/prepare_hpatches.py` | downloads HPatches and writes the box-AP manifest |
 | `scripts/visualize_examples.py` | renders good, bad, and false-positive prediction examples |
 | `scripts/analyze_results.py` | writes failure plots, CSVs, and a Markdown analysis |
 | `scripts/gpu_check.py` | backend/GPU diagnostics: HIP vs CUDA build, driver, groups, tools |
@@ -261,6 +274,21 @@ The images and a Markdown index are written to
 `outputs/flickrlogos32/examples/`. Visualization options: `--models`,
 `--good`, `--bad`, `--negatives`.
 
+### Matcher validation — HPatches
+
+HPatches is used to check whether the matchers themselves behave as expected.
+The benchmark runs through the same pipeline and model registry, but switches
+to the metrics used in the papers: MMA@1/3/5/10, HEA@1/3/5/10, and corner error.
+
+```bash
+uv run python scripts/prepare_hpatches.py
+uv run python main.py --protocol hpatches --models sift orb akaze --output outputs/hpatches
+```
+
+This downloads the 116 sequences (580 reference/target pairs) into
+`data/hpatches/` and writes `outputs/hpatches/results.json` plus `results.md`.
+The report includes a literature reference table and a per-split breakdown.
+
 ### CUDA / CPU / macOS
 
 The non-Linux dependency markers install stock PyPI torch. To switch a Linux
@@ -290,6 +318,25 @@ Outputs: `outputs/flickrlogos32/results.json`, `results.md`, and
 These numbers are a **project-specific one-shot benchmark**, not official
 FlickrLogos-32 mAP: one reference per class, no P1/P2/P3 split, and
 cross-class negatives instead of the original 3,000 no-logo images.
+
+## HPatches validation results
+
+116 sequences, 580 pairs, 2,048 keypoints, Lowe ratio 0.75.
+
+| Model | MMA@1 | MMA@3 | MMA@5 | MMA@10 | HEA@1 | HEA@3 | HEA@5 | HEA@10 | Median CE |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SIFT | 0.505 | 0.734 | 0.777 | 0.798 | 0.441 | 0.705 | 0.809 | 0.891 | 1.344 px |
+| ORB | 0.385 | 0.720 | 0.789 | 0.814 | 0.245 | 0.529 | 0.667 | 0.772 | 2.515 px |
+| AKAZE | 0.435 | 0.752 | 0.824 | 0.858 | 0.309 | 0.586 | 0.700 | 0.828 | 2.025 px |
+
+For reference, Efe et al. 2021 report SIFT MMA@3 / HEA@3 of 0.87 / 0.76,
+ORB 0.68 / 0.40, and AKAZE 0.80 / 0.65. Their protocol uses tuned ratio tests,
+mutual nearest neighbors, 108 sequences, and OpenCV 4.5.2, so exact agreement
+is not expected. The values are in the expected range, and the full report
+includes the literature table plus per-split metrics.
+
+Adding another matcher only requires registering it in `MODELS` and running the
+same command — no separate validation script.
 
 ## Failure analysis
 
@@ -330,6 +377,7 @@ precision-recall, and latency.
 - [x] Benchmarking harness (dataset → pipeline → metrics → JSON + Markdown)
 - [x] FlickrLogos-32 preparation and one-shot benchmark
 - [x] Classical baselines: SIFT, ORB, AKAZE
+- [x] HPatches matcher validation (MMA / HEA / corner error)
 - [x] Prediction example visualizations (good, bad, false positives)
 - [x] Failure analysis: class, size, instance-count, confidence, and latency plots
 - [ ] Classical baseline: NCC
@@ -349,6 +397,8 @@ One devlog per week, published on LinkedIn and kept here.
 - [Devlog index](docs/devnotes/README.md)
 - [Week 1](docs/devnotes/week1-devnotes.md) — goal, design, datasets, metrics,
   first baseline results, and failure analysis.
+- [Week 2](docs/devnotes/week2-devnotes.md) — HPatches validation integrated
+  into the bench, MMA/HEA/corner error, literature comparison.
 
 ## Documentation
 

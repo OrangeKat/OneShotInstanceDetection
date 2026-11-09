@@ -127,6 +127,7 @@ Goal: instance detection across **Buildings, Logos, People, Objects**. No single
 | People | [CUHK-SYSU](https://github.com/ShuangLI59/person_search) | person search, boxes + IDs | mAP, top-1 | closest standard task to instance detection |
 | Buildings | [Paris6k](https://www.robots.ox.ac.uk/~vgg/data/parisbuildings/) | retrieval, query ROIs | mAP, recall@k | not detection boxes |
 | Objects | [RPC](https://arxiv.org/abs/1901.07249) | category-level product detection, boxes | mAP | no cross-image instance identity |
+| Validation | [HPatches](https://github.com/hpatches/hpatches-dataset) | planar pairs, homographies | MMA, HEA, corner error | matcher validation; not detection AP |
 
 **Protocol notes**
 
@@ -134,8 +135,9 @@ Goal: instance detection across **Buildings, Logos, People, Objects**. No single
 |---|---|
 | Common | reference crop → query image → predicted box → AP@0.5 |
 | Paris6k | report mAP / recall@k; project the query ROI through the estimated homography for a box IoU |
+| HPatches | report MMA@1/3/5/10, HEA@1/3/5/10, and corner error; not detection AP |
 | Mixing | do not mix category-level and instance-level AP in one table |
-| Access | FlickrLogos-32: email request (the prep script uses the public OpenLogo mirror) · CUHK-SYSU: request form · Paris6k: original links may be dead · RPC: direct download |
+| Access | FlickrLogos-32: email request (the prep script uses the public OpenLogo mirror) · CUHK-SYSU: request form · Paris6k: original links may be dead · RPC: direct download · HPatches: direct download |
 
 > **Current harness note.** FlickrLogos-32 is the first dataset wired into the
 > manifest → box → AP path. See §6 for the exact split, results, and
@@ -213,10 +215,9 @@ Allowed, but not training from scratch:
   JSON or JSONL, absolute boxes, optional reference crop, negative queries.
 - Models: `src/models/feature_matching/{sift,orb,akaze}.py`, with shared
   matching and RANSAC helpers in `base.py`.
-- Metrics: hit rate at IoU@0.5, 11-point AP@0.5, mean IoU, match/inlier
-  counts, latency mean / p50 / p95.
-- Outputs: `results.json` (config, aggregate metrics, per-sample records),
-  `results.md`, and optional annotated examples.
+- Metrics: box protocol — hit rate at IoU@0.5, 11-point AP@0.5, mean IoU,
+  match/inlier counts, latency.
+- Outputs: `results.json`, `results.md`, and optional annotated examples.
 - Analysis: `scripts/analyze_results.py` is a thin entry point; data, metrics,
   plots, tables, and report rendering live in `src/analysis/`.
 - CLI: `--manifest`, `--root`, `--models`, `--output`, `--max-samples`,
@@ -348,8 +349,13 @@ precision-recall, and latency distribution.
 - A. K. Bhunia, A. K. Bhunia, S. Ghose, A. Das, P. P. Roy, U. Pal. 2019. **A Deep One-Shot Network for Query-based Logo Retrieval.** *arXiv*. [arXiv](https://arxiv.org/abs/1811.01395)
 - B. Zhang, W. Min, J. Wang, S. Hou, Q. Hou, Y. Zheng, S. Jiang. 2021. **Discriminative Semantic Feature Pyramid Network with Guided Anchoring for Logo Detection.** *arXiv*. [arXiv](https://arxiv.org/abs/2108.13775)
 
+### Benchmarks / evaluation
+
+- U. Efe, K. G. Ince, A. A. Alatan. 2021. **Effect of Parameter Optimization on Classical and Learning-based Image Matching Methods.** *ICCVW*. [arXiv](https://arxiv.org/abs/2108.08179)
+
 ### Datasets
 
+- V. Balntas, K. Lenc, A. Vedaldi, K. Mikolajczyk. 2017. **HPatches: A Benchmark and Evaluation of Handcrafted and Learned Local Descriptors.** *CVPR*. [arXiv](https://arxiv.org/abs/1704.05939) · [dataset](https://github.com/hpatches/hpatches-dataset)
 - J. Philbin, O. Chum, M. Isard, J. Sivic, A. Zisserman. 2008. **Lost in Quantization: Improving Particular Object Retrieval in Large Scale Image Databases.** *CVPR*. [doi](https://doi.org/10.1109/CVPR.2008.4587635) · [Paris6k](https://www.robots.ox.ac.uk/~vgg/data/parisbuildings/)
 - S. Romberg, L. G. Pueyo, R. Lienhart, R. van Zwol. 2011. **Scalable Logo Recognition in Real-World Images.** *ICMR*. [doi](https://doi.org/10.1145/1991996.1992028) · [dataset](https://www.uni-augsburg.de/en/fakultaet/fai/informatik/prof/mmc/research/datensatze/flickrlogos)
 - T. Xiao, S. Li, B. Wang, L. Lin, X. Wang. 2017. **Joint Detection and Identification Feature Learning for Person Search.** *CVPR*. [arXiv](https://arxiv.org/abs/1604.01850) · [dataset](https://github.com/ShuangLI59/person_search)
@@ -360,4 +366,5 @@ precision-recall, and latency distribution.
 - OpenCV. **Template Matching.** [docs](https://docs.opencv.org/4.x/d4/dc6/tutorial_py_template_matching.html)
 - OpenCV. **OpenCV 5.0 documentation.** [docs](https://docs.opencv.org/5.0/)
 - Kornia. **Differentiable Computer Vision Library.** [docs](https://kornia.github.io/)
+- Voxel51. **OpenLogo.** [dataset](https://huggingface.co/datasets/Voxel51/OpenLogo) — public mirror used to obtain the FlickrLogos-32 positive images.
 - Voxel51. **OpenLogo.** [dataset](https://huggingface.co/datasets/Voxel51/OpenLogo) — public mirror used to obtain the FlickrLogos-32 positive images.
