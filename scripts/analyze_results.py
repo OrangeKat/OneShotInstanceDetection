@@ -3,7 +3,7 @@
 
 Reads the per-sample JSON written by ``src/pipeline.py`` and produces
 per-class heatmaps, failure breakdowns, hit-rate factor plots, PR curves,
-latency plots, a Markdown report, and per-class CSV.
+latency plots, a Markdown report, a diagnostics report, and CSVs.
 
 Usage:
     uv run python scripts/analyze_results.py
@@ -24,6 +24,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.analysis.data import load_rows
+from src.analysis.diagnostics_report import render_diagnostics
 from src.analysis.metrics import per_class_metrics
 from src.analysis.plots import (
     plot_failure_breakdown,
@@ -36,6 +37,7 @@ from src.analysis.plots import (
     plot_pr_curves,
 )
 from src.analysis.report import render_report
+from src.analysis.slices import slice_metrics, stage_counts
 from src.analysis.tables import write_csv, write_failure_csv
 
 
@@ -73,6 +75,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=5,
         help="Number of best/worst classes per model.",
     )
+    parser.add_argument(
+        "--bootstrap",
+        type=int,
+        default=500,
+        help="Bootstrap resamples for slice confidence intervals.",
+    )
     args = parser.parse_args(argv)
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -84,6 +92,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     class_rows = per_class_metrics(rows, models, threshold)
     write_csv(args.output / "per_class_metrics.csv", class_rows)
     write_failure_csv(args.output / "failure_breakdown.csv", rows, models)
+
+    stages = stage_counts(rows, models)
+    stage_rows = [
+        {"model": model, "stage": stage, "count": count}
+        for model in models
+        for stage, count in stages[model].items()
+    ]
+    write_csv(args.output / "stage_breakdown.csv", stage_rows)
+    slice_rows = slice_metrics(
+        rows,
+        models,
+        threshold,
+        n_boot=args.bootstrap,
+    )
+    write_csv(args.output / "slice_metrics.csv", slice_rows)
+    (args.output / "diagnostics.md").write_text(
+        render_diagnostics(payload, stages, slice_rows, models, threshold)
+    )
 
     plot_failure_breakdown(rows, models, args.output / "failure_breakdown.png")
     plot_per_class_heatmap(

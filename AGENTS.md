@@ -50,6 +50,10 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/prepare_rpc.py` | RPC category-level manifest |
 | `scripts/prepare_paris6k.py` | Paris6k retrieval manifest |
 | `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
+| `scripts/diagnose.py` | single-pair overlay, stage, stability, and oracles |
+| `scripts/compare_datasets.py` | model × dataset result matrix |
+| `scripts/sweep.py` | one-factor keypoints/RANSAC/size/ratio sweeps |
+| `scripts/aggregate_runs.py` | mean/std over repeated runs |
 | `scripts/analyze_results.py` | failure-analysis plots, CSVs, and report |
 | `scripts/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
 | `scripts/gpu_check.py` | ROCm / CUDA / device diagnostics |
@@ -124,10 +128,17 @@ make hpatches MODELS="sift"
 ```bash
 make examples
 make analyze
+make diagnose MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle"
+make compare
+make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
 ```
 
 - Examples: `outputs/flickrlogos32/examples/index.md`.
-- Analysis: `outputs/flickrlogos32/analysis/analysis.md` plus plots and CSVs.
+- Analysis: `outputs/flickrlogos32/analysis/analysis.md`, `diagnostics.md`,
+  stage/slice CSVs, and plots.
+- The benchmark records per-sample stage, inlier ratio, coverage,
+  reprojection error, homography validity, and model parameters. Repeated runs
+  can be aggregated with `scripts/aggregate_runs.py`.
 
 ## Adding a model
 

@@ -54,6 +54,13 @@ probe/gallery pairs, RPC category-level pairs, and a Paris6k retrieval manifest
 with a new `--protocol retrieval` (mAP / recall@k). Paris6k is retrieval-only
 because its database images have no detection boxes.
 
+To make failures analyzable without re-running, the benchmark now records the
+per-sample stage (no matches, too few matches, RANSAC failure, degenerate
+homography, wrong box), inlier ratio, coverage, reprojection error, homography
+validity, and parameter count. `make analyze` turns that into stage and slice
+tables with bootstrap intervals, and `make diagnose` renders a single-pair
+overlay with seed-stability and scale / query-crop oracles.
+
 ## 2. The first HPatches run
 
 I ran the full suite on 2026-11-09 over 116 sequences and 580 reference/target

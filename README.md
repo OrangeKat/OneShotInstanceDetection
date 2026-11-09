@@ -190,7 +190,10 @@ Common targets:
 | `make hpatches` | HPatches matcher validation |
 | `make paris` | Paris6k retrieval evaluation |
 | `make examples` | annotated prediction examples |
-| `make analyze` | failure-analysis plots and report |
+| `make analyze` | failure-analysis plots, diagnostics, and report |
+| `make diagnose MODEL=sift INDEX=0` | one-pair overlay, stages, stability, oracles |
+| `make compare` | model × dataset result matrix |
+| `make sweep ARGS="--keypoints 512 1024"` | one-factor sensitivity sweep |
 | `make clean` | remove local caches |
 | `make tag-week WEEK=N` | create and push the weekly tag |
 
@@ -223,6 +226,7 @@ directly for flags not exposed by the Makefile.
 | `--ratio` | `0.75` | Lowe ratio-test threshold |
 | `--max-side` | `640` | longest image side for LoFTR / FlexGlue; larger images are downscaled |
 | `--gpu-mem-fraction` | `0` | cap this process to a share of VRAM; `0` auto-sizes from free memory |
+| `--seed` | `0` | seed Python, NumPy, PyTorch, and OpenCV RANSAC |
 
 ### GPU memory
 
@@ -448,6 +452,29 @@ This writes plots, CSVs, and `analysis.md` to `outputs/flickrlogos32/analysis/`.
 The analysis splits failures into hit, wrong box, no prediction, false positive,
 and true negative, and breaks results down by class, logo size, and number of
 GT instances.
+
+It also writes `diagnostics.md`, `stage_breakdown.csv`, and `slice_metrics.csv`:
+stage labels isolate no matches, too few matches, RANSAC failure, degenerate
+homographies, and wrong boxes; slice tables cover size, instance count, inlier
+ratio, coverage, and query area with 95% bootstrap intervals.
+
+For a single pair:
+
+```bash
+make diagnose MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle"
+```
+
+This writes a match overlay plus stage, geometry, seed-stability, and
+reference-scale / query-crop oracle results. For a cross-dataset table and a
+sensitivity sweep:
+
+```bash
+make compare
+make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
+```
+
+Multi-seed runs can be aggregated with
+`uv run python scripts/aggregate_runs.py --runs run0/results.json run1/results.json`.
 
 Current failure patterns:
 

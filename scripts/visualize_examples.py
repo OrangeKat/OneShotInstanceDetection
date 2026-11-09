@@ -158,21 +158,46 @@ def select_examples(
         good_count,
     )
     used = {sample_key(record) for record in good}
-    bad = take_unique(
-        [
-            record
-            for record in sorted(
-                positives,
-                key=lambda record: (
-                    float(record["best_iou"]),
-                    -int(record["inlier_count"]),
-                ),
+    stages = [
+        "no_matches",
+        "too_few_matches",
+        "ransac_failed",
+        "degenerate_homography",
+        "wrong_box",
+    ]
+    bad: list[Mapping[str, object]] = []
+    for stage in stages:
+        if len(bad) >= bad_count:
+            break
+        candidate = next(
+            (
+                record
+                for record in positives
+                if record.get("stage") == stage and sample_key(record) not in used
+            ),
+            None,
+        )
+        if candidate is not None:
+            bad.append(candidate)
+            used.add(sample_key(candidate))
+    if len(bad) < bad_count:
+        bad.extend(
+            take_unique(
+                [
+                    record
+                    for record in sorted(
+                        positives,
+                        key=lambda record: (
+                            float(record["best_iou"]),
+                            -int(record["inlier_count"]),
+                        ),
+                    )
+                    if sample_key(record) not in used
+                ],
+                bad_count - len(bad),
             )
-            if sample_key(record) not in used
-        ],
-        bad_count,
-    )
-    used.update(sample_key(record) for record in bad)
+        )
+        used.update(sample_key(record) for record in bad)
     false_positives = take_unique(
         [
             record
@@ -187,7 +212,7 @@ def select_examples(
     )
     return (
         [("good", record) for record in good]
-        + [("bad", record) for record in bad]
+        + [(str(record.get("stage") or "bad"), record) for record in bad]
         + [("negative", record) for record in false_positives]
     )
 

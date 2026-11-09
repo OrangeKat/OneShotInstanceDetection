@@ -10,12 +10,18 @@ MANIFEST ?= data/flickrlogos32/manifest.json
 OUTPUT ?= outputs/flickrlogos32
 HPATCHES_OUTPUT ?= outputs/hpatches
 PARIS_OUTPUT ?= outputs/paris6k
+MODEL ?= sift
+INDEX ?= 0
+ARGS ?=
+ANALYZE_MANIFEST ?= data/flickrlogos32/manifest.json
+ANALYZE_RESULTS ?= outputs/flickrlogos32/results.json
+ANALYZE_OUTPUT ?= outputs/flickrlogos32/analysis
 WEEK ?=
 
 .PHONY: help rocm-wheels sync lint format check gpu \
 	data-flickr data-hpatches data-cuhk data-rpc data-paris \
 	bench bench-smoke hpatches paris \
-	examples analyze all \
+	examples analyze diagnose compare sweep all \
 	clean tag-week
 
 help: ## Show available targets
@@ -100,7 +106,19 @@ examples: ## Render good, bad, and false-positive examples
 	$(PYTHON) scripts/visualize_examples.py
 
 analyze: ## Generate failure-analysis plots and report
-	$(PYTHON) scripts/analyze_results.py
+	$(PYTHON) scripts/analyze_results.py \
+		--manifest $(ANALYZE_MANIFEST) \
+		--results $(ANALYZE_RESULTS) \
+		--output $(ANALYZE_OUTPUT) $(ARGS)
+
+diagnose: ## Diagnose one pair (MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle")
+	$(PYTHON) scripts/diagnose.py --model $(MODEL) --index $(INDEX) $(ARGS)
+
+compare: ## Compare models across dataset result files
+	$(PYTHON) scripts/compare_datasets.py $(ARGS)
+
+sweep: ## Run a sensitivity sweep (ARGS="--keypoints 512 1024")
+	$(PYTHON) scripts/sweep.py $(ARGS)
 
 all: check bench hpatches examples analyze ## Run checks and both benchmarks
 

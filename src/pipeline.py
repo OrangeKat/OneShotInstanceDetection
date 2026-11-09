@@ -15,6 +15,7 @@ import argparse
 import gc
 import json
 import time
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from logging import Logger
@@ -36,7 +37,10 @@ from src.models.feature_matching import (
 )
 from src.models.feature_matching.base import FeatureMatcher, MatchResult
 from src.utils.dataset import Box, InstanceDataset, InstanceSample
+from src.utils.diagnostics import match_diagnostics
 from src.utils.logger import get_logger
+from src.utils.model_info import parameter_count
+from src.utils.seeding import set_seed
 from src.validation.hpatches import evaluate_model as evaluate_hpatches
 from src.validation.hpatches import load_pairs
 from src.validation.report import render_report
@@ -130,6 +134,19 @@ class SampleResult:
         predicted_box: Predicted query box, or ``None``.
         gt_boxes: Ground-truth query boxes.
         hit: Whether the best IoU reaches the hit threshold.
+        keypoints_ref: Reference keypoint count.
+        keypoints_query: Query keypoint count.
+        inlier_ratio: Inliers divided by matches.
+        coverage: Convex-hull area of inlier reference keypoints divided by
+            the reference crop area.
+        reprojection_error: Median inlier reprojection error in query pixels.
+        homography_condition: Condition number of the estimated homography.
+        homography_valid: Whether the homography and projected box pass sanity
+            checks.
+        box_area_ratio: Predicted box area divided by the query image area.
+        center_error: Predicted-to-nearest-GT box center distance divided by
+            the query diagonal.
+        stage: Failure stage label.
     """
 
     dataset: str
@@ -142,6 +159,16 @@ class SampleResult:
     predicted_box: Box | None
     gt_boxes: tuple[Box, ...]
     hit: bool
+    keypoints_ref: int = 0
+    keypoints_query: int = 0
+    inlier_ratio: float = 0.0
+    coverage: float = 0.0
+    reprojection_error: float | None = None
+    homography_condition: float | None = None
+    homography_valid: bool = False
+    box_area_ratio: float | None = None
+    center_error: float | None = None
+    stage: str = "unknown"
 
 
 def box_iou(first: Box, second: Box) -> float:
@@ -315,6 +342,14 @@ def summarize(
     false_positives = sum(
         1 for record in records if record.predicted_box is not None and not record.hit
     )
+    reprojection = [
+        record.reprojection_error
+        for record in positives
+        if record.reprojection_error is not None
+    ]
+    center_errors = [
+        record.center_error for record in positives if record.center_error is not None
+    ]
     return {
         "model": name,
         "samples": len(records),
@@ -332,6 +367,24 @@ def summarize(
             if records
             else 0.0
         ),
+        "mean_inlier_ratio": (
+            float(np.mean([record.inlier_ratio for record in records]))
+            if records
+            else 0.0
+        ),
+        "mean_coverage": (
+            float(np.mean([record.coverage for record in records])) if records else 0.0
+        ),
+        "median_reprojection_error": (
+            float(np.median(reprojection)) if reprojection else None
+        ),
+        "valid_homography_rate": (
+            sum(1 for record in positives if record.homography_valid) / len(positives)
+            if positives
+            else 0.0
+        ),
+        "mean_center_error": (float(np.mean(center_errors)) if center_errors else None),
+        "stages": dict(Counter(record.stage for record in records)),
         "false_positives": false_positives,
         "latency_ms": {
             "mean": float(latencies.mean()) if len(latencies) else 0.0,
@@ -374,6 +427,15 @@ def run_benchmark(
             if box is not None and sample.query_boxes
             else 0.0
         )
+        diagnostics = match_diagnostics(
+            match,
+            reference.shape[:2],
+            query.shape[:2],
+            box,
+            sample.query_boxes,
+            best_iou,
+            iou_threshold,
+        )
         records.append(
             SampleResult(
                 dataset=sample.dataset,
@@ -386,6 +448,7 @@ def run_benchmark(
                 predicted_box=box,
                 gt_boxes=sample.query_boxes,
                 hit=best_iou >= iou_threshold,
+                **diagnostics,
             )
         )
     return summarize(matcher.name, records, iou_threshold)
@@ -410,6 +473,16 @@ def _record_dict(record: SampleResult) -> dict[str, object]:
         "best_iou": record.best_iou,
         "predicted_box": _box_list(record.predicted_box),
         "gt_boxes": [_box_list(box) for box in record.gt_boxes],
+        "keypoints_ref": record.keypoints_ref,
+        "keypoints_query": record.keypoints_query,
+        "inlier_ratio": record.inlier_ratio,
+        "coverage": record.coverage,
+        "reprojection_error": record.reprojection_error,
+        "homography_condition": record.homography_condition,
+        "homography_valid": record.homography_valid,
+        "box_area_ratio": record.box_area_ratio,
+        "center_error": record.center_error,
+        "stage": record.stage,
         "hit": record.hit,
     }
 
@@ -632,6 +705,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "currently free memory."
         ),
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Seed for Python, NumPy, PyTorch, and OpenCV RANSAC.",
+    )
     return parser.parse_args(argv)
 
 
@@ -665,6 +744,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     log = get_logger(__name__)
     names = _selected_models(args.models)
+    set_seed(args.seed)
     _configure_gpu(args.gpu_mem_fraction, log)
 
     if args.protocol == "hpatches":
@@ -714,6 +794,7 @@ def _run_box(
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
         "max_side": args.max_side,
+        "seed": args.seed,
     }
     reports: list[dict[str, object]] = []
     for name in names:
@@ -728,6 +809,7 @@ def _run_box(
                 loader=dataset.load,
             )
             report.update(_gpu_memory_stats())
+            report["params"] = parameter_count(matcher)
             reports.append(report)
             latency = report["latency_ms"]
             log.info(
@@ -786,6 +868,7 @@ def _run_hpatches(
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
         "max_side": args.max_side,
+        "seed": args.seed,
     }
     reports: list[dict[str, object]] = []
     for name in names:
@@ -795,6 +878,7 @@ def _run_hpatches(
             matcher = _make_matcher(name, args)
             report = evaluate_hpatches(matcher, pairs)
             report.update(_gpu_memory_stats())
+            report["params"] = parameter_count(matcher)
             reports.append(report)
             log.info(
                 "%s: MMA@3=%s HEA@3=%s median_CE=%s peak=%.0fMiB",
@@ -853,6 +937,7 @@ def _run_retrieval(
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
         "max_side": args.max_side,
+        "seed": args.seed,
     }
     reports: list[dict[str, object]] = []
     for name in names:
@@ -862,6 +947,7 @@ def _run_retrieval(
             matcher = _make_matcher(name, args)
             report = evaluate_retrieval(matcher, queries)
             report.update(_gpu_memory_stats())
+            report["params"] = parameter_count(matcher)
             reports.append(report)
             log.info(
                 "%s: mAP=%s R@1=%s R@5=%s peak=%.0fMiB",
