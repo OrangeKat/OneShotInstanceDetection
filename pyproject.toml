@@ -33,6 +33,7 @@ dependencies = [
     # Image I/O, drawing, and the xfeatures2d AKAZE baseline.
     "opencv-contrib-python",
     "matplotlib>=3.11.2",
+    "kornia>=0.9.0",
 ]
 
 [project.optional-dependencies]
@@ -80,6 +81,9 @@ find-links = ["vendor/pytorch-rocm"]
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+
+# Vendored third-party code.
+extend-exclude = ["src/models/feature_matching/lightglue/_vendor"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "ANN", "D"]

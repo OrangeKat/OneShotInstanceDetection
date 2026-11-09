@@ -20,7 +20,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from src.models.feature_matching import AKAZEMatcher, ORBMatcher, SIFTMatcher
+from src.models.feature_matching import (
+    AKAZEMatcher,
+    ALIKEDLightGlueMatcher,
+    ORBMatcher,
+    SIFTMatcher,
+    SuperPointLightGlueMatcher,
+)
 from src.models.feature_matching.base import FeatureMatcher, MatchResult
 from src.utils.dataset import Box, InstanceDataset, InstanceSample
 from src.utils.logger import get_logger
@@ -33,6 +39,8 @@ MODELS: dict[str, type[FeatureMatcher]] = {
     "sift": SIFTMatcher,
     "orb": ORBMatcher,
     "akaze": AKAZEMatcher,
+    "superpoint_lightglue": SuperPointLightGlueMatcher,
+    "aliked_lightglue": ALIKEDLightGlueMatcher,
 }
 
 

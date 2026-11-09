@@ -3,7 +3,7 @@ SHELL := /bin/bash
 
 PYTHON ?= uv run python
 RUFF ?= uv run ruff
-MODELS ?= sift orb akaze
+MODELS ?= sift orb akaze superpoint_lightglue aliked_lightglue
 MANIFEST ?= data/flickrlogos32/manifest.json
 OUTPUT ?= outputs/flickrlogos32
 HPATCHES_OUTPUT ?= outputs/hpatches
