@@ -17,7 +17,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 ## Hard rules
 
 - Do not write implementation code unless the user explicitly asks.
-- Use only these datasets: FlickrLogos-32, CUHK-SYSU, Paris6k, RPC, HPatches.
+- Use only these datasets: FlickrLogos-32, PRW, Paris6k, RPC, HPatches.
 - HPatches is a matcher-validation dataset: report MMA, HEA, and corner error,
   not detection AP.
 - RGB images only.
@@ -46,7 +46,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `src/utils/logger.py` | stderr logger |
 | `scripts/prepare_flickrlogos32.py` | FlickrLogos-32 download + manifest |
 | `scripts/prepare_hpatches.py` | HPatches download + box-AP manifest |
-| `scripts/prepare_cuhk_sysu.py` | CUHK-SYSU person-search manifest |
+| `scripts/prepare_prw.py` | PRW person-search manifest |
 | `scripts/prepare_rpc.py` | RPC category-level manifest |
 | `scripts/prepare_paris6k.py` | Paris6k retrieval manifest |
 | `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
@@ -115,9 +115,9 @@ make hpatches MODELS="sift"
 
 ### Other datasets
 
-- CUHK-SYSU is request-only. `make data-cuhk` expects the official layout
-  under `data/cuhk-sysu` (`Image/SSM`,
-  `annotation/test/train_test/TestG50.mat`) and builds probe/gallery pairs.
+- PRW is distributed through Google Drive / Kaggle. Download and extract it
+  under `data/prw`, then `make data-prw` builds query/gallery pairs from
+  `query_box/`, `annotations/`, and `frame_test.mat`.
 - RPC is downloaded from the public Hugging Face mirror by `make data-rpc`.
   It is category-level, so report it separately from instance-level AP.
 - Paris6k is retrieval-only: `make data-paris` downloads the revisitop images

@@ -19,7 +19,7 @@ ANALYZE_OUTPUT ?= outputs/flickrlogos32/analysis
 WEEK ?=
 
 .PHONY: help rocm-wheels sync lint format check gpu \
-	data-flickr data-hpatches data-cuhk data-rpc data-paris \
+	data-flickr data-hpatches data-prw data-rpc data-paris \
 	bench bench-smoke hpatches paris bench-all \
 	examples analyze diagnose compare sweep all \
 	clean tag-week
@@ -60,8 +60,8 @@ data-flickr: ## Download FlickrLogos-32 and build the manifest
 data-hpatches: ## Download HPatches and build the manifest
 	$(PYTHON) scripts/prepare_hpatches.py
 
-data-cuhk: ## Build the CUHK-SYSU manifest (dataset must be requested)
-	$(PYTHON) scripts/prepare_cuhk_sysu.py
+data-prw: ## Build the PRW person-search manifest (data must be downloaded)
+	$(PYTHON) scripts/prepare_prw.py
 
 data-rpc: ## Download RPC shards and build the category-level manifest
 	$(PYTHON) scripts/prepare_rpc.py

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run every available dataset benchmark sequentially.
 
-Each dataset has its own protocol: box AP for FlickrLogos-32, CUHK-SYSU, and
-RPC; retrieval for Paris6k; native matcher validation for HPatches. Datasets
-whose data or manifest is missing are skipped with a message.
+Each dataset has its own protocol: box AP for FlickrLogos-32, PRW, and RPC;
+retrieval for Paris6k; native matcher validation for HPatches. Datasets whose
+data or manifest is missing are skipped with a message.
 
 Usage:
     uv run python scripts/run_all.py
@@ -48,10 +48,10 @@ DATASETS = [
         Path("flickrlogos32"),
     ),
     Dataset(
-        "cuhk-sysu",
+        "prw",
         "box",
-        Path("data/cuhk-sysu/manifest.json"),
-        Path("cuhk-sysu"),
+        Path("data/prw/manifest.json"),
+        Path("prw"),
     ),
     Dataset(
         "rpc",

@@ -49,10 +49,34 @@ make data-hpatches
 make hpatches
 ```
 
-On the dataset side, I also wired the remaining allowed datasets: CUHK-SYSU
+On the dataset side, I also wired the remaining allowed datasets: PRW
 probe/gallery pairs, RPC category-level pairs, and a Paris6k retrieval manifest
 with a new `--protocol retrieval` (mAP / recall@k). Paris6k is retrieval-only
 because its database images have no detection boxes.
+
+### 2026-11-10 — replacing CUHK-SYSU with PRW
+
+CUHK-SYSU is request-only: the images are released after an email to the
+authors, and there is no public copy I can point a prep script at. That makes
+the benchmark non-reproducible for anyone cloning the repository: the code is
+there, but the People dataset cannot be obtained without a manual request.
+
+I replaced it with [PRW](https://github.com/liangzheng06/PRW-baseline)
+(Person Re-identification in the Wild), the standard companion benchmark for
+person search. PRW has 11,816 full frames, 932 identities, 34,304 annotated
+boxes, six cameras, and hand-drawn query boxes. It supports the same
+instance-level protocol I use everywhere else: the query crop is the reference,
+gallery frames are the queries, and the same identity's box is the ground
+truth. It is distributed through Google Drive / Kaggle rather than an author
+request, so the only prerequisite is downloading and extracting the release.
+
+The trade-off is that PRW is not numerically comparable to CUHK-SYSU: the
+identities, cameras, video domain, and test split are different, so published
+CUHK person-search numbers cannot be used as a target. I am treating PRW as the
+public, reproducible People benchmark and reporting it separately, not as a
+drop-in replacement for CUHK results. The preparation is
+`scripts/prepare_prw.py` / `make data-prw`; the CUHK builder was removed so the
+allowed dataset list and the code agree.
 
 To make failures analyzable without re-running, the benchmark now records the
 per-sample stage (no matches, too few matches, RANSAC failure, degenerate

@@ -108,7 +108,7 @@ Notes:
   `d_i`.
 - Fine-tuning candidates: OmniGlue low-shot adaptation, LightGlue/SuperPoint
   on synthetic homographies, DINOv2 probes/adapters, and person-search models
-  on [CUHK-SYSU](https://github.com/ShuangLI59/person_search).
+  on [PRW](https://github.com/liangzheng06/PRW-baseline).
 
 ## Datasets
 
@@ -118,7 +118,7 @@ of them, and each has a different task and annotation format.
 | Category | Dataset | Task / annotations | Metric |
 |---|---|---|---|
 | Logos | [FlickrLogos-32](https://www.uni-augsburg.de/en/fakultaet/fai/informatik/prof/mmc/research/datensatze/flickrlogos) | 32 classes, boxes, multiple logos per image | AP@0.5 |
-| People | [CUHK-SYSU](https://github.com/ShuangLI59/person_search) | person search, boxes + IDs | mAP, top-1 |
+| People | [PRW](https://github.com/liangzheng06/PRW-baseline) | person search, full frames + boxes + IDs | mAP, top-1 |
 | Buildings | [Paris6k](https://www.robots.ox.ac.uk/~vgg/data/parisbuildings/) | retrieval, query ROIs | mAP, recall@k |
 | Objects | [RPC](https://arxiv.org/abs/1901.07249) | category-level product detection, boxes | mAP |
 | Validation | [HPatches](https://github.com/hpatches/hpatches-dataset) | planar pairs, homographies | MMA, HEA, corner error |
@@ -126,8 +126,8 @@ of them, and each has a different task and annotation format.
 Protocol notes:
 
 - Common protocol: reference crop → query image → predicted box → AP@0.5.
-- CUHK-SYSU: instance-level; the reference is a probe person and queries are
-  gallery images with that person's box.
+- PRW: instance-level; the reference is a query crop and queries are gallery
+  frames with that person's box.
 - RPC: category-level (no cross-image instance identity); report it separately
   from instance-level AP.
 - Paris6k: retrieval; rank candidate database images per query ROI and report
@@ -139,9 +139,9 @@ Protocol notes:
   corner error. Do not report detection AP for it.
 - Do not mix category-level and instance-level AP in one table.
 - Access: FlickrLogos-32 requires an email request (the prep script uses the
-  public OpenLogo mirror); CUHK-SYSU requires an email request and is not
-  mirrored here, so `make data-cuhk` builds the manifest from the official
-  layout; Paris6k images come from the revisitop archives and `make data-paris`
+  public OpenLogo mirror); PRW is distributed through Google Drive / Kaggle and
+  is not author-gated, so `make data-prw` builds the manifest from the extracted
+  release; Paris6k images come from the revisitop archives and `make data-paris`
   downloads them; RPC is mirrored on Hugging Face and `make data-rpc`
   downloads it; HPatches is directly downloadable.
 
@@ -160,11 +160,10 @@ make data-flickr       # FlickrLogos-32
 make data-hpatches     # HPatches
 make data-paris        # Paris6k
 make data-rpc          # RPC (one shard by default; --max-shards 0 for all)
-# CUHK-SYSU: request the dataset, extract it to data/cuhk-sysu, then
-make data-cuhk
+make data-prw          # PRW (after downloading and extracting the release)
 ```
 
-Protocols: box AP for FlickrLogos-32, CUHK-SYSU, and RPC; retrieval mAP for
+Protocols: box AP for FlickrLogos-32, PRW, and RPC; retrieval mAP for
 Paris6k; MMA/HEA/AUC for HPatches. A full eight-model pass over all five is
 expensive — RoMa alone dominates — so start with `MODELS="sift"` or a subset.
 
@@ -214,7 +213,7 @@ Common targets:
 | `make check` | Ruff lint + format check |
 | `make data-flickr` | FlickrLogos-32 download + manifest |
 | `make data-hpatches` | HPatches download + manifest |
-| `make data-cuhk` | CUHK-SYSU manifest (request the dataset first) |
+| `make data-prw` | PRW manifest (after extracting the release) |
 | `make data-rpc` | RPC download + category-level manifest |
 | `make data-paris` | Paris6k download + retrieval manifest |
 | `make bench` | FlickrLogos-32 box benchmark |
