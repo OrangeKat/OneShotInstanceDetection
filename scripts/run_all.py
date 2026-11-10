@@ -118,11 +118,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     overrides = parse_model_overrides(args.dataset_models)
-    selected = [
-        dataset
-        for dataset in DATASETS
-        if args.datasets is None or dataset.name in args.datasets
-    ]
+    by_name = {dataset.name: dataset for dataset in DATASETS}
+    if args.datasets:
+        unknown = set(args.datasets) - set(by_name)
+        if unknown:
+            raise SystemExit(f"unknown datasets: {sorted(unknown)}")
+        selected = [by_name[name] for name in args.datasets]
+    else:
+        selected = list(DATASETS)
     failures: list[str] = []
     for dataset in selected:
         if not (_REPO_ROOT / dataset.required).exists():
