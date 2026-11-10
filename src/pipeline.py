@@ -697,6 +697,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--roma-coarse-res",
+        type=int,
+        default=560,
+        help="RoMa coarse resolution; lower values are faster.",
+    )
+    parser.add_argument(
+        "--roma-upsample-res",
+        type=int,
+        default=864,
+        help="RoMa upsample resolution; lower values are faster.",
+    )
+    parser.add_argument(
         "--gpu-mem-fraction",
         type=float,
         default=0.0,
@@ -794,6 +806,8 @@ def _run_box(
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
         "max_side": args.max_side,
+        "roma_coarse_res": args.roma_coarse_res,
+        "roma_upsample_res": args.roma_upsample_res,
         "seed": args.seed,
     }
     reports: list[dict[str, object]] = []
@@ -811,6 +825,7 @@ def _run_box(
             report.update(_gpu_memory_stats())
             report["params"] = parameter_count(matcher)
             reports.append(report)
+            write_reports(reports, config, args.output)
             latency = report["latency_ms"]
             log.info(
                 "%s: hit=%.3f ap50=%.3f iou=%.3f p50=%.1fms peak=%.0fMiB",
@@ -868,6 +883,8 @@ def _run_hpatches(
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
         "max_side": args.max_side,
+        "roma_coarse_res": args.roma_coarse_res,
+        "roma_upsample_res": args.roma_upsample_res,
         "seed": args.seed,
     }
     reports: list[dict[str, object]] = []
@@ -880,6 +897,7 @@ def _run_hpatches(
             report.update(_gpu_memory_stats())
             report["params"] = parameter_count(matcher)
             reports.append(report)
+            write_hpatches_reports(reports, config, args.output)
             log.info(
                 "%s: MMA@3=%s HEA@3=%s median_CE=%s peak=%.0fMiB",
                 name,
@@ -937,6 +955,8 @@ def _run_retrieval(
         "ratio": args.ratio,
         "ransac_threshold": args.ransac_threshold,
         "max_side": args.max_side,
+        "roma_coarse_res": args.roma_coarse_res,
+        "roma_upsample_res": args.roma_upsample_res,
         "seed": args.seed,
     }
     reports: list[dict[str, object]] = []
@@ -949,6 +969,7 @@ def _run_retrieval(
             report.update(_gpu_memory_stats())
             report["params"] = parameter_count(matcher)
             reports.append(report)
+            write_retrieval_reports(reports, config, args.output)
             log.info(
                 "%s: mAP=%s R@1=%s R@5=%s peak=%.0fMiB",
                 name,
@@ -986,6 +1007,9 @@ def _make_matcher(name: str, args: argparse.Namespace) -> FeatureMatcher:
     }
     if name in {"loftr", "flexglue"}:
         kwargs["max_side"] = args.max_side
+    if name == "roma":
+        kwargs["coarse_res"] = args.roma_coarse_res
+        kwargs["upsample_res"] = args.roma_upsample_res
     return MODELS[name](**kwargs)
 
 

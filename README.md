@@ -168,6 +168,15 @@ Protocols: box AP for FlickrLogos-32, CUHK-SYSU, and RPC; retrieval mAP for
 Paris6k; MMA/HEA/AUC for HPatches. A full eight-model pass over all five is
 expensive — RoMa alone dominates — so start with `MODELS="sift"` or a subset.
 
+Results are checkpointed after each model, so an interrupted run keeps every
+completed model. RoMa costs about 1.3–1.4 s per pair; on Paris6k (~24k candidate
+matches) that is hours by itself. For a faster Paris run:
+
+```bash
+make paris MODELS="sift orb akaze"
+make paris MODELS="roma" ARGS="--roma-coarse-res 392 --roma-upsample-res 560"
+```
+
 ## Evaluation
 
 The current harness records accuracy, speed, and match diagnostics, and writes
@@ -251,6 +260,8 @@ directly for flags not exposed by the Makefile.
 | `--max-side` | `640` | longest image side for LoFTR / FlexGlue; larger images are downscaled |
 | `--gpu-mem-fraction` | `0` | cap this process to a share of VRAM; `0` auto-sizes from free memory |
 | `--seed` | `0` | seed Python, NumPy, PyTorch, and OpenCV RANSAC |
+| `--roma-coarse-res` | `560` | RoMa coarse resolution; lower is faster |
+| `--roma-upsample-res` | `864` | RoMa upsample resolution; lower is faster |
 
 ### GPU memory
 
