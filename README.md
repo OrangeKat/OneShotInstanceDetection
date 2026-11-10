@@ -226,6 +226,7 @@ Common targets:
 | `make diagnose MODEL=sift INDEX=0` | one-pair overlay, stages, stability, oracles |
 | `make compare` | model × dataset result matrix |
 | `make sweep ARGS="--keypoints 512 1024"` | one-factor sensitivity sweep |
+| `make figures` | regenerate per-dataset devlog figures |
 | `make clean` | remove local caches |
 | `make tag-week WEEK=N` | create and push the weekly tag |
 

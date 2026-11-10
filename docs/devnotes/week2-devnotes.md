@@ -309,30 +309,120 @@ Where this leaves the harness:
 - Keep recording later harness or model changes here rather than rewriting the
   first-run tables.
 
-## 5. FlickrLogos-32 failure analysis
+## 5. Results by dataset
 
-I also kept the failure analysis over the FlickrLogos-32 box results. It splits
-every pair into hit, wrong box, no prediction, false positive, or true
-negative.
+These are the numbers as they stand on 2026-11-10. I am keeping this section to
+the results themselves; the failure analysis and the “why” will come in a
+separate pass once the last two datasets have run.
 
-| Model | Hit | Wrong box | No prediction | False positive |
-|---|---:|---:|---:|---:|
-| SIFT | 36.1% | 28.0% | 23.2% | 3.7% |
-| ORB | 18.8% | 26.2% | 42.3% | 3.8% |
-| AKAZE | 20.8% | 15.7% | 50.8% | 0.4% |
+### 5.1 FlickrLogos-32
 
-The patterns are fairly clear. SIFT fails most often with a wrong box: it finds
-the class but locks onto the wrong instance or the background. ORB and AKAZE
-fail mostly by producing no prediction at all. Small logos are the main
-weakness — below 1% of the query image, SIFT hits 0.218 while ORB and AKAZE hit
-0.000; at 5% or more the rates are 0.460, 0.292, and 0.326. Multi-instance
-queries are harder for every model: SIFT drops from 0.430 to 0.358, ORB from
-0.237 to 0.143, and AKAZE from 0.261 to 0.163 (single → multi). The worst SIFT
-classes are `apple`, `carlsberg`, `nvidia`, `pepsi`, and `shell`.
+2,528 pairs: one median-area reference crop per class, the remaining images as
+queries, plus cross-class negatives. Instance-level, AP@0.5.
 
-One caveat: this covers SIFT, ORB, and AKAZE only. The run that added the
-learned matchers was OOM-killed and I have not repeated it with the streaming
-fix, so the failure modes above are classical-only for now.
+| Model | Hit | AP@0.5 | Mean IoU | p50 | Params |
+|---|---:|---:|---:|---:|---:|
+| RoMa | **0.702** | **0.656** | **0.596** | 1,340 ms | 111.3 M |
+| FlexGlue | 0.533 | 0.484 | 0.444 | 247 ms | 142.4 M |
+| LoFTR | 0.461 | 0.420 | 0.408 | 85 ms | 11.6 M |
+| SuperPoint + LightGlue | 0.451 | 0.420 | 0.389 | 79 ms | 13.2 M |
+| SIFT | 0.413 | 0.406 | 0.352 | 48 ms | — |
+| ALIKED + LightGlue | 0.354 | 0.332 | 0.308 | 76 ms | 12.6 M |
+| AKAZE | 0.239 | 0.251 | 0.209 | 39 ms | — |
+| ORB | 0.215 | 0.237 | 0.196 | 7 ms | — |
+
+![FlickrLogos-32 model comparison](images/week2/flickr_models.png)
+
+RoMa leads both hit rate and AP, with FlexGlue second. LoFTR and SuperPoint +
+LightGlue are level on AP; SIFT follows; the classical ORB/AKAZE pair is at the
+bottom. The same ordering is visible in mean IoU. On cost, RoMa is about 17×
+slower than SuperPoint + LightGlue on this dataset, while FlexGlue sits between
+them at roughly 3× the SuperPoint latency.
+
+![FlickrLogos-32 accuracy by logo area](images/week2/flickr_accuracy_by_area.png)
+
+Accuracy rises with the logo’s share of the query image for every model. RoMa
+is the flattest curve and the only model that stays near 0.5 at the smallest
+bucket; FlexGlue climbs sharply with area; SuperPoint + LightGlue stays below
+0.2 until logos reach about 2% of the query.
+
+### 5.2 RPC
+
+1,244 category-level pairs built from one public checkout-scene shard: a
+reference product crop from one scene, other scenes containing the category as
+queries, sampled negatives otherwise.
+
+| Model | Hit | AP@0.5 | Mean IoU | p50 | Params |
+|---|---:|---:|---:|---:|---:|
+| FlexGlue | **0.463** | 0.366 | **0.421** | 253 ms | 142.4 M |
+| SIFT | 0.451 | **0.371** | 0.410 | 156 ms | — |
+| RoMa | 0.427 | 0.361 | 0.415 | 1,377 ms | 111.3 M |
+| AKAZE | 0.400 | 0.312 | 0.363 | 168 ms | — |
+| ORB | 0.312 | 0.299 | 0.302 | 16 ms | — |
+| ALIKED + LightGlue | 0.208 | 0.208 | 0.212 | 106 ms | 12.6 M |
+| SuperPoint + LightGlue | 0.199 | 0.175 | 0.213 | 108 ms | 13.2 M |
+| LoFTR | 0.086 | 0.091 | 0.122 | 133 ms | 11.6 M |
+
+![RPC model comparison](images/week2/rpc_models.png)
+
+FlexGlue, SIFT, and RoMa form a close top group on AP; FlexGlue has the best
+hit rate and mean IoU, SIFT the best AP. The learned sparse models and LoFTR
+are clearly lower here. RPC is category-level, so this table is reported
+separately from the instance-level datasets.
+
+![RPC accuracy by product area](images/week2/rpc_accuracy_by_area.png)
+
+The area trend is weaker than on FlickrLogos-32: SIFT, FlexGlue, and RoMa stay
+within a fairly narrow band across buckets, while the learned sparse models
+remain low across the range.
+
+### 5.3 HPatches
+
+116 sequences and 580 pairs under the harness protocol: 2,048 keypoints,
+raw-pixel coordinates, 3 px RANSAC. Matcher validation, not detection AP.
+
+| Model | MMA@3 | HEA@3 |
+|---|---:|---:|
+| RoMa | **0.915** | **0.841** |
+| FlexGlue | 0.881 | 0.791 |
+| ALIKED + LightGlue | 0.864 | 0.778 |
+| LoFTR | 0.847 | 0.762 |
+| SuperPoint + LightGlue | 0.807 | 0.748 |
+| AKAZE | 0.752 | 0.586 |
+| SIFT | 0.734 | 0.705 |
+| ORB | 0.720 | 0.529 |
+
+![HPatches model comparison](images/week2/hpatches_models.png)
+
+RoMa, ALIKED + LightGlue, and FlexGlue are the strongest group on HEA@3.
+The RoMa row is the post-fix balanced-sampling rerun; the other rows are the
+first full eight-model run, kept as the trace in §2.
+
+### 5.4 Paris6k
+
+Retrieval protocol: 70 query images with ROIs, each ranked against its landmark
+positives and sampled negatives; mAP and recall@1/5/10. The manifest and
+protocol are in place, and the run is scheduled for tonight. No result yet.
+
+### 5.5 PRW
+
+Person search: 932 identities, 11,816 full frames, 34,304 boxes, query crops as
+references and gallery frames as queries. The manifest builder is in place and
+the run is scheduled for tonight. No result yet.
+
+### 5.6 Cross-dataset view
+
+![Primary metric by dataset](images/week2/dataset_matrix.png)
+
+Read the matrix by column, not across datasets: FlickrLogos-32 is instance-level
+AP, RPC is category-level AP, and HPatches is HEA@3. The consistent pattern is
+RoMa at the top of the instance-level and matcher tables, FlexGlue close behind
+with a much lower cost, and the classical models remaining competitive on the
+category-level retail data.
+
+Caveats: the FlickrLogos-32 split is project-specific (one reference per class,
+cross-class negatives, no official P1/P2/P3 split); RPC uses one public shard
+and is category-level; Paris6k and PRW results are still pending.
 
 ## 6. References
 
