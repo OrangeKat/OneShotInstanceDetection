@@ -145,6 +145,29 @@ Protocol notes:
   downloads them; RPC is mirrored on Hugging Face and `make data-rpc`
   downloads it; HPatches is directly downloadable.
 
+Run every dataset whose data is present:
+
+```bash
+make bench-all MODELS="sift orb akaze"   # quick pass
+make bench-all                           # all eight matchers
+```
+
+`bench-all` skips a dataset when its manifest or images are missing. To make
+all five available:
+
+```bash
+make data-flickr       # FlickrLogos-32
+make data-hpatches     # HPatches
+make data-paris        # Paris6k
+make data-rpc          # RPC (one shard by default; --max-shards 0 for all)
+# CUHK-SYSU: request the dataset, extract it to data/cuhk-sysu, then
+make data-cuhk
+```
+
+Protocols: box AP for FlickrLogos-32, CUHK-SYSU, and RPC; retrieval mAP for
+Paris6k; MMA/HEA/AUC for HPatches. A full eight-model pass over all five is
+expensive — RoMa alone dominates — so start with `MODELS="sift"` or a subset.
+
 ## Evaluation
 
 The current harness records accuracy, speed, and match diagnostics, and writes
@@ -187,6 +210,7 @@ Common targets:
 | `make data-paris` | Paris6k download + retrieval manifest |
 | `make bench` | FlickrLogos-32 box benchmark |
 | `make bench-smoke` | 20-sample smoke test |
+| `make bench-all` | run every dataset whose data is present |
 | `make hpatches` | HPatches matcher validation |
 | `make paris` | Paris6k retrieval evaluation |
 | `make examples` | annotated prediction examples |

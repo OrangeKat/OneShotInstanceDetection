@@ -20,7 +20,7 @@ WEEK ?=
 
 .PHONY: help rocm-wheels sync lint format check gpu \
 	data-flickr data-hpatches data-cuhk data-rpc data-paris \
-	bench bench-smoke hpatches paris \
+	bench bench-smoke hpatches paris bench-all \
 	examples analyze diagnose compare sweep all \
 	clean tag-week
 
@@ -101,6 +101,9 @@ paris: ## Run Paris6k retrieval evaluation
 		--max-side $(MAX_SIDE) \
 		--gpu-mem-fraction $(GPU_MEM_FRACTION) \
 		--output $(PARIS_OUTPUT)
+
+bench-all: ## Run every available dataset sequentially
+	$(PYTHON) scripts/run_all.py --models $(MODELS) $(ARGS)
 
 examples: ## Render good, bad, and false-positive examples
 	$(PYTHON) scripts/visualize_examples.py

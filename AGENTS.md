@@ -54,6 +54,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/compare_datasets.py` | model × dataset result matrix |
 | `scripts/sweep.py` | one-factor keypoints/RANSAC/size/ratio sweeps |
 | `scripts/aggregate_runs.py` | mean/std over repeated runs |
+| `scripts/run_all.py` | bench-all orchestration across datasets |
 | `scripts/analyze_results.py` | failure-analysis plots, CSVs, and report |
 | `scripts/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
 | `scripts/gpu_check.py` | ROCm / CUDA / device diagnostics |
@@ -122,6 +123,9 @@ make hpatches MODELS="sift"
 - Paris6k is retrieval-only: `make data-paris` downloads the revisitop images
   and ground truth, and `make paris` runs
   `--protocol retrieval` (mAP / recall@k). Do not report box AP for it.
+
+Run every dataset whose data is present with
+`make bench-all MODELS="sift orb"`; missing datasets are skipped.
 
 ### Examples and failure analysis
 
