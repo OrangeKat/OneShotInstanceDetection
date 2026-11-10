@@ -96,6 +96,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Only run these dataset names.",
     )
     parser.add_argument(
+        "--dataset-models",
+        action="append",
+        metavar="DATASET=MODEL[,MODEL...]",
+        help=(
+            "Override the model list for one dataset. Can be repeated, e.g. "
+            "--dataset-models paris6k=sift,orb,akaze."
+        ),
+    )
+    parser.add_argument(
         "--max-samples",
         type=int,
         help="Limit samples per dataset (smoke test).",
@@ -108,6 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    overrides = parse_model_overrides(args.dataset_models)
     selected = [
         dataset
         for dataset in DATASETS
@@ -118,11 +128,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not (_REPO_ROOT / dataset.required).exists():
             print(f"skip {dataset.name}: missing {dataset.required}", flush=True)
             continue
+        models = overrides.get(dataset.name, args.models)
         command = [
             sys.executable,
             str(_REPO_ROOT / "main.py"),
             "--models",
-            *args.models,
+            *models,
             "--output",
             str(_REPO_ROOT / args.output_root / dataset.output),
         ]
@@ -146,6 +157,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(f"failed datasets: {', '.join(failures)}")
     print("all selected datasets finished")
     return 0
+
+
+def parse_model_overrides(values: Sequence[str] | None) -> dict[str, list[str]]:
+    """Parse ``DATASET=MODEL[,MODEL...]`` overrides.
+
+    Args:
+        values: Raw override strings.
+
+    Returns:
+        Dataset name to model list.
+
+    Raises:
+        SystemExit: If an override is malformed.
+    """
+    overrides: dict[str, list[str]] = {}
+    for value in values or []:
+        if "=" not in value:
+            raise SystemExit(f"invalid --dataset-models value: {value}")
+        dataset, models = value.split("=", 1)
+        overrides[dataset] = [model for model in models.split(",") if model]
+    known = {dataset.name for dataset in DATASETS}
+    unknown = set(overrides) - known
+    if unknown:
+        raise SystemExit(f"unknown dataset in --dataset-models: {sorted(unknown)}")
+    return overrides
 
 
 if __name__ == "__main__":

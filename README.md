@@ -167,6 +167,14 @@ Protocols: box AP for FlickrLogos-32, PRW, and RPC; retrieval mAP for
 Paris6k; MMA/HEA/AUC for HPatches. A full eight-model pass over all five is
 expensive — RoMa alone dominates — so start with `MODELS="sift"` or a subset.
 
+Per-dataset model overrides are supported when one dataset should not run the
+full suite:
+
+```bash
+uv run python scripts/run_all.py --datasets paris6k prw \
+  --dataset-models paris6k=sift,orb,akaze,superpoint_lightglue,aliked_lightglue,loftr,flexglue
+```
+
 Results are checkpointed after each model, so an interrupted run keeps every
 completed model. RoMa costs about 1.3–1.4 s per pair; on Paris6k (~24k candidate
 matches) that is hours by itself. For a faster Paris run:
