@@ -13,6 +13,105 @@ landed within about 0.02 of its published AUC, and FlexGlue and LoFTR were
 close. RoMa needed one more fix — the official balanced sampling instead of my
 top-certainty shortcut — and then it matched its published AUC as well.
 
+## Metrics used in these notes
+
+**Notation.** A *reference* is the crop of the instance being searched for; a
+*query* is the full image being searched; a *GT box* is the annotated instance
+box in the query; *IoU* is the intersection-over-union of a predicted box and a
+GT box. A dash in a table means the metric does not apply (for example, the
+classical matchers have no trainable parameters).
+
+### Box protocol
+
+- **Hit rate** — among positive pairs (queries with at least one GT box), the
+  fraction whose predicted box reaches IoU ≥ 0.5 with any GT box. Negative
+  queries are excluded from the denominator.
+- **AP@0.5** — 11-point interpolated average precision over all predicted
+  pairs, ranked by RANSAC inlier count and then match count. A prediction is a
+  true positive when its best IoU is ≥ 0.5; predictions on negative queries
+  count as false positives. This is a project-specific one-shot AP, not the
+  official FlickrLogos mAP or the RPC category mAP.
+- **Mean IoU** — mean best IoU over positive pairs, with 0 when no box is
+  predicted.
+- **Matches** — correspondences kept after the ratio test or the matcher’s
+  score filter, before RANSAC.
+- **Inliers** — correspondences in the RANSAC consensus set at the 3 px
+  reprojection threshold.
+- **Latency p50 / p95** — per-pair matcher time, excluding image loading;
+  50th and 95th percentiles over the run.
+- **Parameters** — trainable parameters in the matcher’s torch modules,
+  in millions; not applicable to SIFT/ORB/AKAZE.
+- **Peak GPU** — maximum GPU memory allocated during that model’s run, in MiB.
+- **False positive** — a predicted box on a query that has no GT boxes for the
+  instance. **True negative** — a negative query with no prediction.
+
+### HPatches
+
+HPatches is matcher validation, not detection AP. Reference and target images
+are related by a known homography `H`.
+
+- **MMA@k** (matching accuracy) — for each pair with at least one match, the
+  fraction of matches whose reference keypoint, projected through the GT `H`,
+  lands within `k` pixels of its matched target keypoint; averaged over pairs.
+- **HEA@k** (homography estimation accuracy) — fraction of all pairs whose mean
+  four-corner error after the estimated homography is at most `k` pixels. A
+  pair with no estimated homography counts as a failure.
+- **Corner error** — mean Euclidean distance between the four reference corners
+  projected by the GT homography and by the estimated homography. The table
+  reports the median over pairs.
+- **AUC@k** — normalized area under the cumulative corner-error curve up to
+  `k` pixels: 1.0 means every pair is within `k`, 0 means none are. Pairs with
+  no homography are treated as infinite error.
+
+### Retrieval (Paris6k)
+
+- **Candidate** — one database image ranked for a query.
+- **Inlier score** — RANSAC inlier count for the query ROI crop against a
+  candidate; a failed homography scores 0. Candidates are ranked by this score.
+- **mAP** — mean over queries of the average precision of the ranked candidate
+  list, where relevant candidates are the revisitop easy and hard positives for
+  that query.
+- **Recall@k** — fraction of queries with at least one relevant candidate in
+  the top `k`.
+
+### Per-pair diagnostics
+
+The benchmark stores a stage and a few geometry descriptors for every pair.
+
+- **Stage** — one of:
+  - `hit`: positive pair with IoU ≥ 0.5.
+  - `wrong_box`: homography estimated, but IoU < 0.5.
+  - `no_matches`: zero matches after filtering.
+  - `too_few_matches`: one to three matches (RANSAC needs four).
+  - `ransac_failed`: at least four matches but no homography.
+  - `degenerate_homography`: homography found but ill-conditioned or with an
+    implausible projected area.
+  - `no_prediction`: valid homography but no usable projected box.
+  - `false_positive` / `true_negative`: predicted / did not predict on a
+    negative query.
+- **Inlier ratio** — inliers divided by matches.
+- **Coverage** — convex-hull area of the inlier reference keypoints divided by
+  the reference crop area. Low coverage means the homography comes from a
+  small part of the instance.
+- **Reprojection error** — median distance, in query pixels, between each
+  inlier reference keypoint projected by the estimated homography and its
+  matched query keypoint.
+- **Homography condition number** — `cond(H)`; large values mean an unstable
+  geometry. The validity check rejects values ≥ 10⁸.
+- **Valid homography** — finite, condition number < 10⁸, and projected box
+  area between 10⁻⁴ and 10⁴ times the query image area.
+- **Valid H rate** — fraction of positive pairs with a valid homography.
+- **Box area ratio** — predicted box area divided by the query image area.
+- **Center error** — distance between the predicted box center and the nearest
+  GT box center, divided by the query image diagonal.
+
+### Statistics
+
+- **n** — number of pairs in a slice.
+- **95% bootstrap interval** — 2.5th–97.5th percentile of the mean after
+  resampling the slice with replacement (500 resamples by default). It reflects
+  sampling uncertainty over pairs, not run-to-run seed variance.
+
 ## 1. What I built
 
 At the start of the week the benchmark had SIFT, ORB, AKAZE, and the two
@@ -319,6 +418,16 @@ separate pass once the last two datasets have run.
 
 2,528 pairs: one median-area reference crop per class, the remaining images as
 queries, plus cross-class negatives. Instance-level, AP@0.5.
+
+One worked example, using RoMa on a Texaco query:
+
+![Sample RoMa result: reference crop and query with matches, GT box, and prediction](images/week2/sample_result_roma.jpg)
+
+*Left: reference crop (input). Right: query image (input). Green box = GT, red
+box = prediction; green lines = RANSAC inliers, red lines = outliers. This pair
+has 2,048 matches, 1,917 inliers, IoU 0.974, inlier ratio 0.936, inlier coverage
+0.852, and median reprojection error 1.28 px. It is one pair from the 2,528;
+the aggregate numbers are below.*
 
 | Model | Hit | AP@0.5 | Mean IoU | p50 | Params |
 |---|---:|---:|---:|---:|---:|

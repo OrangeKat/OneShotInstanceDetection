@@ -6,7 +6,7 @@ instead pulls the FlickrLogos-32 positive images and boxes from the public
 ``Voxel51/OpenLogo`` mirror, where they are stored under numeric Flickr photo
 IDs, and builds one reference/query split per logo class.
 
-For each class, the image with the largest logo area becomes the reference
+For each class, the image with the median logo area becomes the reference
 crop; the remaining images of that class become queries. Optional cross-class
 images are added as negative queries.
 
