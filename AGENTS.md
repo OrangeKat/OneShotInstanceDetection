@@ -56,6 +56,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/aggregate_runs.py` | mean/std over repeated runs |
 | `scripts/run_all.py` | bench-all orchestration across datasets |
 | `scripts/plot_dataset_summary.py` | per-dataset devlog figures |
+| `scripts/plot_prw_analysis.py` | PRW complexity figures |
 | `scripts/analyze_results.py` | failure-analysis plots, CSVs, and report |
 | `scripts/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
 | `scripts/gpu_check.py` | ROCm / CUDA / device diagnostics |

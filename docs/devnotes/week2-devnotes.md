@@ -496,9 +496,52 @@ first full eight-model run, kept as the trace in §2.
 
 ### 5.4 PRW
 
-Person search: 932 identities, 11,816 full frames, 34,304 boxes, query crops as
-references and gallery frames as queries. The manifest builder is in place and
-the run is scheduled for tonight. No result yet.
+PRW is full-frame person search: 932 identities, 11,816 frames, 34,304 boxes.
+For a tractable first pass I used a 200-query subset: 5,881 pairs, 4,881
+positives. The full manifest is 73,120 pairs; this subset is enough to test
+whether local matching is viable at all.
+
+| Model | Hit | AP@0.5 | Mean matches | Mean inliers |
+|---|---:|---:|---:|---:|
+| SIFT | 0.001 | 0.003 | 3.4 | 1.1 |
+| ORB | 0.000 | 0.000 | 0.8 | 0.3 |
+| AKAZE | 0.000 | 0.013 | 0.4 | 0.1 |
+| SuperPoint + LightGlue | 0.009 | 0.055 | 11.6 | 4.2 |
+| ALIKED + LightGlue | 0.002 | 0.014 | 9.3 | 2.9 |
+| LoFTR | 0.011 | 0.034 | 28.0 | 4.3 |
+| FlexGlue | 0.003 | 0.010 | 1.9 | 0.8 |
+
+The first observation is size. PRW people are small: the median GT box is
+**1.04%** of the query frame, 49% of positives are below 1%, and 77% are below
+2%. The median reference crop is 78 × 220 px, and classical detectors find only
+about 11 keypoints on an AKAZE crop, 32 on ORB, and 206 on SIFT.
+
+![GT box area: PRW vs FlickrLogos-32 vs RPC](images/week2/prw_area_comparison.png)
+
+Size is not the whole story. The reference crop is already at the object scale:
+its area is 1.15× the GT box on PRW, versus 16× on FlickrLogos-32 and 26× on
+RPC. So this is not a reference-scale mismatch; the hard part is cross-camera
+appearance, pose, and background.
+
+![Mean matches per pair across datasets](images/week2/prw_matches_comparison.png)
+
+Matches collapse by roughly 3–30× relative to the other datasets. The stage
+breakdown shows the two failure regimes: classical matchers mostly produce no
+matches or too few matches; the dense matchers produce correspondences but
+place the box on the wrong person or background.
+
+![PRW failure stages](images/week2/prw_stages.png)
+
+A typical SuperPoint + LightGlue pair makes the problem visible: 11 matches,
+4 inliers, and a prediction on the wrong person. The inlier lines mostly follow
+the background rather than the reference person.
+
+![Typical SuperPoint + LightGlue PRW overlay](images/week2/prw_typical_lightweight.jpg)
+
+So PRW is currently a negative result for homography-based local matching. The
+remaining test is RoMa: it is dense and may produce more correspondences, but
+the typical pair has only 11 matches, so the ceiling looks low. The RoMa run on
+this 200-query subset is scheduled for tonight.
 
 ### 5.5 Cross-dataset view
 
@@ -512,7 +555,7 @@ category-level retail data.
 
 Caveats: the FlickrLogos-32 split is project-specific (one reference per class,
 cross-class negatives, no official P1/P2/P3 split); RPC uses one public shard
-and is category-level; PRW results are still pending.
+and is category-level; PRW uses a 200-query subset and its full run is pending.
 
 ## 6. References
 

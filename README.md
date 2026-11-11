@@ -9,8 +9,9 @@ training-free by default: released matcher weights, a fixed harness, and the sam
 evaluation for every model.
 
 > **Status (November 2026).** Eight matchers are implemented. Results are
-> available for FlickrLogos-32, RPC, and HPatches. PRW is wired but its data has
-> not been downloaded yet.
+> available for FlickrLogos-32, RPC, and HPatches. A 200-query PRW subset is
+> benchmarked; local matching collapses on full-frame person search, and the
+> full PRW/RoMa runs are pending.
 
 ## How it works
 
@@ -73,7 +74,7 @@ Columns are **not directly comparable** — FlickrLogos-32 and RPC are box AP@0.
 | ORB | 0.237 | 0.299 | 0.529 |
 
 Rows are sorted by FlickrLogos-32 AP. The HPatches RoMa row uses the post-fix
-balanced-sampling rerun. PRW results are pending.
+balanced-sampling rerun. The full PRW run is pending.
 
 ![RoMa on a FlickrLogos-32 query: reference crop, query, matches, GT and prediction](docs/devnotes/images/week2/sample_result_roma.jpg)
 
@@ -87,6 +88,10 @@ What stands out:
 - FlexGlue is close behind at a fraction of the cost.
 - Classical SIFT remains competitive on category-level RPC.
 - The learned sparse models lead HPatches but not the retail data.
+
+On a 200-query PRW subset, the best local matcher reaches AP@0.5 0.055:
+full-frame person search is outside the local-matching regime. The full PRW
+run and RoMa are pending.
 
 Full per-dataset tables and figures are in the
 [Week 2 devlog](docs/devnotes/week2-devnotes.md#5-results-by-dataset).
@@ -127,8 +132,9 @@ Four datasets cover three instance categories and one validation set.
 - **FlickrLogos-32** is the primary instance-level benchmark; the project split
   uses one median-area reference crop per class plus cross-class negatives.
 - **PRW** is the public person-search benchmark: full frames, boxes, identities,
-  and query crops. Download and extract the release (Google Drive / Kaggle)
-  before `make data-prw`. It is not numerically comparable to CUHK-SYSU results.
+  and query crops. A 200-query subset is benchmarked and shows that local
+  matchers are not viable for full-frame person search. It is not numerically
+  comparable to CUHK-SYSU results.
 - **RPC** is category-level and must be reported separately from instance-level
   AP. `make data-rpc` uses one public checkout shard by default; pass
   `--max-shards 0` for the full release.

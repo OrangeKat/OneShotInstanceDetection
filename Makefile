@@ -119,6 +119,7 @@ matches: ## Render match overlays from a result file
 
 figures: ## Regenerate the per-dataset devlog figures
 	$(PYTHON) scripts/plot_dataset_summary.py
+	$(PYTHON) scripts/plot_prw_analysis.py
 
 all: check bench hpatches examples analyze ## Run checks and both benchmarks
 
