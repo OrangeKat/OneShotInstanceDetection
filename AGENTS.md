@@ -50,6 +50,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/prepare_rpc.py` | RPC category-level manifest |
 | `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
 | `scripts/diagnose.py` | single-pair overlay, stage, stability, and oracles |
+| `scripts/visualize_matches.py` | match-overlay gallery from a result file |
 | `scripts/compare_datasets.py` | model × dataset result matrix |
 | `scripts/sweep.py` | one-factor keypoints/RANSAC/size/ratio sweeps |
 | `scripts/aggregate_runs.py` | mean/std over repeated runs |

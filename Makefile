@@ -20,7 +20,7 @@ WEEK ?=
 .PHONY: help rocm-wheels sync lint format check gpu \
 	data-flickr data-hpatches data-prw data-rpc \
 	bench bench-smoke hpatches bench-all \
-	examples analyze diagnose compare sweep figures all \
+	examples analyze diagnose compare sweep matches figures all \
 	clean tag-week
 
 help: ## Show available targets
@@ -110,6 +110,12 @@ compare: ## Compare models across dataset result files
 
 sweep: ## Run a sensitivity sweep (ARGS="--keypoints 512 1024")
 	$(PYTHON) scripts/sweep.py $(ARGS)
+
+matches: ## Render match overlays from a result file
+	$(PYTHON) scripts/visualize_matches.py \
+		--manifest $(ANALYZE_MANIFEST) \
+		--results $(ANALYZE_RESULTS) \
+		--output $(ANALYZE_OUTPUT)/matches $(ARGS)
 
 figures: ## Regenerate the per-dataset devlog figures
 	$(PYTHON) scripts/plot_dataset_summary.py
