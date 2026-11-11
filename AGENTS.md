@@ -17,7 +17,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 ## Hard rules
 
 - Do not write implementation code unless the user explicitly asks.
-- Use only these datasets: FlickrLogos-32, PRW, Paris6k, RPC, HPatches.
+- Use only these datasets: FlickrLogos-32, PRW, RPC, HPatches.
 - HPatches is a matcher-validation dataset: report MMA, HEA, and corner error,
   not detection AP.
 - RGB images only.
@@ -48,7 +48,6 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/prepare_hpatches.py` | HPatches download + box-AP manifest |
 | `scripts/prepare_prw.py` | PRW person-search manifest |
 | `scripts/prepare_rpc.py` | RPC category-level manifest |
-| `scripts/prepare_paris6k.py` | Paris6k retrieval manifest |
 | `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
 | `scripts/diagnose.py` | single-pair overlay, stage, stability, and oracles |
 | `scripts/compare_datasets.py` | model × dataset result matrix |
@@ -121,9 +120,6 @@ make hpatches MODELS="sift"
   `query_box/`, `annotations/`, and `frame_test.mat`.
 - RPC is downloaded from the public Hugging Face mirror by `make data-rpc`.
   It is category-level, so report it separately from instance-level AP.
-- Paris6k is retrieval-only: `make data-paris` downloads the revisitop images
-  and ground truth, and `make paris` runs
-  `--protocol retrieval` (mAP / recall@k). Do not report box AP for it.
 
 Run every dataset whose data is present with
 `make bench-all MODELS="sift orb"`; missing datasets are skipped.

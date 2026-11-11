@@ -9,7 +9,6 @@ GPU_MEM_FRACTION ?= 0
 MANIFEST ?= data/flickrlogos32/manifest.json
 OUTPUT ?= outputs/flickrlogos32
 HPATCHES_OUTPUT ?= outputs/hpatches
-PARIS_OUTPUT ?= outputs/paris6k
 MODEL ?= sift
 INDEX ?= 0
 ARGS ?=
@@ -19,8 +18,8 @@ ANALYZE_OUTPUT ?= outputs/flickrlogos32/analysis
 WEEK ?=
 
 .PHONY: help rocm-wheels sync lint format check gpu \
-	data-flickr data-hpatches data-prw data-rpc data-paris \
-	bench bench-smoke hpatches paris bench-all \
+	data-flickr data-hpatches data-prw data-rpc \
+	bench bench-smoke hpatches bench-all \
 	examples analyze diagnose compare sweep figures all \
 	clean tag-week
 
@@ -66,9 +65,6 @@ data-prw: ## Build the PRW person-search manifest (data must be downloaded)
 data-rpc: ## Download RPC shards and build the category-level manifest
 	$(PYTHON) scripts/prepare_rpc.py
 
-data-paris: ## Download Paris6k and build the retrieval manifest
-	$(PYTHON) scripts/prepare_paris6k.py
-
 bench: ## Run the FlickrLogos-32 box benchmark
 	$(PYTHON) main.py \
 		--manifest $(MANIFEST) \
@@ -93,14 +89,6 @@ hpatches: ## Run HPatches matcher validation
 		--max-side $(MAX_SIDE) \
 		--gpu-mem-fraction $(GPU_MEM_FRACTION) \
 		--output $(HPATCHES_OUTPUT)
-
-paris: ## Run Paris6k retrieval evaluation
-	$(PYTHON) main.py \
-		--protocol retrieval \
-		--models $(MODELS) \
-		--max-side $(MAX_SIDE) \
-		--gpu-mem-fraction $(GPU_MEM_FRACTION) \
-		--output $(PARIS_OUTPUT)
 
 bench-all: ## Run every available dataset sequentially
 	$(PYTHON) scripts/run_all.py --models $(MODELS) $(ARGS)

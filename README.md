@@ -1,7 +1,7 @@
 # One-Shot Instance Detection
 
-Find **this exact instance** — a specific logo, person, building, or product —
-in RGB query images, given a single reference image or crop.
+Find **this exact instance** — a specific logo, person, or product — in RGB
+query images, given a single reference image or crop.
 
 This is **instance-level matching**, not category detection and not tracking.
 The reference defines the instance; no class label is required. The benchmark is
@@ -9,8 +9,8 @@ training-free by default: released matcher weights, a fixed harness, and the sam
 evaluation for every model.
 
 > **Status (November 2026).** Eight matchers are implemented. Results are
-> available for FlickrLogos-32, RPC, and HPatches. Paris6k (retrieval) is wired
-> but awaiting a full run; PRW is wired but its data has not been downloaded yet.
+> available for FlickrLogos-32, RPC, and HPatches. PRW is wired but its data has
+> not been downloaded yet.
 
 ## How it works
 
@@ -47,7 +47,6 @@ Other benchmarks:
 
 ```bash
 make hpatches                  # matcher validation
-make paris                     # retrieval evaluation (expensive)
 make bench-all                 # every dataset whose data is present
 make bench-all MODELS="sift"   # quick pass
 ```
@@ -74,7 +73,7 @@ Columns are **not directly comparable** — FlickrLogos-32 and RPC are box AP@0.
 | ORB | 0.237 | 0.299 | 0.529 |
 
 Rows are sorted by FlickrLogos-32 AP. The HPatches RoMa row uses the post-fix
-balanced-sampling rerun. Paris6k and PRW results are pending.
+balanced-sampling rerun. PRW results are pending.
 
 ![RoMa on a FlickrLogos-32 query: reference crop, query, matches, GT and prediction](docs/devnotes/images/week2/sample_result_roma.jpg)
 
@@ -116,13 +115,12 @@ Notes:
 
 ## Datasets
 
-Five datasets cover four instance categories and one validation set.
+Four datasets cover three instance categories and one validation set.
 
 | Dataset | Category | Protocol | Prepare |
 |---|---|---|---|
 | [FlickrLogos-32](https://www.uni-augsburg.de/en/fakultaet/fai/informatik/prof/mmc/research/datensatze/flickrlogos) | Logos | Box AP@0.5 | `make data-flickr` |
 | [PRW](https://github.com/liangzheng06/PRW-baseline) | People | Box AP@0.5 | `make data-prw` |
-| [Paris6k](https://www.robots.ox.ac.uk/~vgg/data/parisbuildings/) | Buildings | Retrieval mAP / recall@k | `make data-paris` |
 | [RPC](https://arxiv.org/abs/1901.07249) | Products | Category-level AP@0.5 | `make data-rpc` |
 | [HPatches](https://github.com/hpatches/hpatches-dataset) | Matcher validation | MMA, HEA, corner error | `make data-hpatches` |
 
@@ -131,8 +129,6 @@ Five datasets cover four instance categories and one validation set.
 - **PRW** is the public person-search benchmark: full frames, boxes, identities,
   and query crops. Download and extract the release (Google Drive / Kaggle)
   before `make data-prw`. It is not numerically comparable to CUHK-SYSU results.
-- **Paris6k** is retrieval-only; database images have no detection boxes, so box
-  AP is not reported.
 - **RPC** is category-level and must be reported separately from instance-level
   AP. `make data-rpc` uses one public checkout shard by default; pass
   `--max-shards 0` for the full release.
@@ -147,7 +143,6 @@ Every run records:
 |---|---|
 | Box accuracy | Hit rate at IoU ≥ 0.5, 11-point AP@0.5, mean IoU |
 | HPatches | MMA@1/3/5/10, HEA@1/3/5/10, corner error, AUC |
-| Retrieval | mAP, recall@1/5/10 |
 | Cost | Per-pair latency mean / p50 / p95, parameters, peak GPU memory |
 | Diagnostics | Failure stage, inlier ratio, coverage, reprojection error, homography validity |
 
@@ -172,10 +167,10 @@ RANSAC is seeded with `--seed`; small run-to-run variation remains expected.
 | Path | Contents |
 |---|---|
 | `main.py` | Benchmark CLI entry point |
-| `src/pipeline.py` | Box, HPatches, and retrieval protocols; model registry |
+| `src/pipeline.py` | Box and HPatches protocols; model registry |
 | `src/models/feature_matching/` | Matcher implementations and vendored code |
 | `src/analysis/` | Failure analysis, slices, plots, and reports |
-| `src/validation/` | HPatches and retrieval metrics |
+| `src/validation/` | HPatches metrics and reports |
 | `src/utils/` | Manifest dataset, diagnostics, seeding, logging |
 | `scripts/` | Dataset preparation, analysis, sweeps, figures |
 | `docs/devnotes/` | Weekly devlogs and the results showcase |
@@ -262,7 +257,6 @@ the end of Week 1.
 - V. Balntas, K. Lenc, A. Vedaldi, K. Mikolajczyk. 2017. **HPatches.** *CVPR*. [arXiv](https://arxiv.org/abs/1704.05939)
 - S. Romberg, L. G. Pueyo, R. Lienhart, R. van Zwol. 2011. **Scalable Logo Recognition in Real-World Images.** *ICMR*. [doi](https://doi.org/10.1145/1991996.1992028)
 - L. Zheng, H. Zhang, S. Sun, M. Chandraker, Q. Tian. 2016. **Person Re-identification in the Wild.** *arXiv*. [arXiv](https://arxiv.org/abs/1604.02531)
-- J. Philbin, O. Chum, M. Isard, J. Sivic, A. Zisserman. 2008. **Lost in Quantization.** *CVPR*. [doi](https://doi.org/10.1109/CVPR.2008.4587635)
 - X.-S. Wei, Q. Cui, L. Yang, P. Wang, L. Liu. 2019. **RPC: A Large-Scale Retail Product Checkout Dataset.** *arXiv*. [arXiv](https://arxiv.org/abs/1901.07249)
 
 ### Software

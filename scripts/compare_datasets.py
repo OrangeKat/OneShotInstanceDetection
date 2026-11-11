@@ -2,8 +2,8 @@
 """Build a model x dataset comparison from benchmark result files.
 
 Scans output directories for ``results.json`` and writes a Markdown plus CSV
-matrix. The primary metric depends on the protocol: AP@0.5 for box datasets,
-mAP for retrieval, and AUC@5 for HPatches.
+matrix. The primary metric depends on the protocol: AP@0.5 for box datasets and
+AUC@5 for HPatches.
 
 Usage:
     uv run python scripts/compare_datasets.py
@@ -20,7 +20,6 @@ from pathlib import Path
 Metric = Callable[[Mapping[str, object]], object]
 PRIMARY: dict[str, tuple[str, Metric]] = {
     "box": ("AP@0.5", lambda report: report.get("ap50")),
-    "retrieval": ("mAP", lambda report: report.get("map")),
     "hpatches": ("AUC@5", lambda report: report.get("auc", {}).get("5")),
 }
 

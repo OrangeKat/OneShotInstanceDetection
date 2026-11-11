@@ -2,13 +2,13 @@
 """Run every available dataset benchmark sequentially.
 
 Each dataset has its own protocol: box AP for FlickrLogos-32, PRW, and RPC;
-retrieval for Paris6k; native matcher validation for HPatches. Datasets whose
-data or manifest is missing are skipped with a message.
+native matcher validation for HPatches. Datasets whose data or manifest is
+missing are skipped with a message.
 
 Usage:
     uv run python scripts/run_all.py
     uv run python scripts/run_all.py --models sift orb akaze
-    uv run python scripts/run_all.py --datasets flickrlogos32 paris6k
+    uv run python scripts/run_all.py --datasets flickrlogos32 rpc
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class Dataset:
 
     Attributes:
         name: Dataset name.
-        protocol: ``box``, ``retrieval``, or ``hpatches``.
+        protocol: ``box`` or ``hpatches``.
         required: Path that must exist to run the benchmark.
         output: Output directory.
     """
@@ -58,12 +58,6 @@ DATASETS = [
         "box",
         Path("data/rpc/manifest.json"),
         Path("rpc"),
-    ),
-    Dataset(
-        "paris6k",
-        "retrieval",
-        Path("data/paris6k/manifest.json"),
-        Path("paris6k"),
     ),
     Dataset(
         "hpatches",
@@ -101,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="DATASET=MODEL[,MODEL...]",
         help=(
             "Override the model list for one dataset. Can be repeated, e.g. "
-            "--dataset-models paris6k=sift,orb,akaze."
+            "--dataset-models rpc=sift,orb."
         ),
     )
     parser.add_argument(
@@ -142,8 +136,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         ]
         if dataset.protocol == "box":
             command.extend(["--manifest", str(_REPO_ROOT / dataset.required)])
-        elif dataset.protocol == "retrieval":
-            command.extend(["--protocol", "retrieval", "--paris-dir", "data/paris6k"])
         else:
             command.extend(
                 ["--protocol", "hpatches", "--hpatches-dir", "data/hpatches"]

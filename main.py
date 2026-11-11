@@ -5,8 +5,6 @@ Usage:
         --models sift orb akaze --output outputs/flickrlogos32
     uv run python main.py --protocol hpatches \\
         --models sift orb akaze --output outputs/hpatches
-    uv run python main.py --protocol retrieval \\
-        --models sift orb akaze --output outputs/paris6k
 
 The implementation lives in :mod:`src.pipeline`.
 """

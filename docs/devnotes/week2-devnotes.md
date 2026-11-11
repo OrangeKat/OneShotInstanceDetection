@@ -63,17 +63,6 @@ are related by a known homography `H`.
   `k` pixels: 1.0 means every pair is within `k`, 0 means none are. Pairs with
   no homography are treated as infinite error.
 
-### Retrieval (Paris6k)
-
-- **Candidate** — one database image ranked for a query.
-- **Inlier score** — RANSAC inlier count for the query ROI crop against a
-  candidate; a failed homography scores 0. Candidates are ranked by this score.
-- **mAP** — mean over queries of the average precision of the ranked candidate
-  list, where relevant candidates are the revisitop easy and hard positives for
-  that query.
-- **Recall@k** — fraction of queries with at least one relevant candidate in
-  the top `k`.
-
 ### Per-pair diagnostics
 
 The benchmark stores a stage and a few geometry descriptors for every pair.
@@ -149,9 +138,7 @@ make hpatches
 ```
 
 On the dataset side, I also wired the remaining allowed datasets: PRW
-probe/gallery pairs, RPC category-level pairs, and a Paris6k retrieval manifest
-with a new `--protocol retrieval` (mAP / recall@k). Paris6k is retrieval-only
-because its database images have no detection boxes.
+probe/gallery pairs and RPC category-level pairs.
 
 ### 2026-11-10 — replacing CUHK-SYSU with PRW
 
@@ -507,19 +494,13 @@ RoMa, ALIKED + LightGlue, and FlexGlue are the strongest group on HEA@3.
 The RoMa row is the post-fix balanced-sampling rerun; the other rows are the
 first full eight-model run, kept as the trace in §2.
 
-### 5.4 Paris6k
-
-Retrieval protocol: 70 query images with ROIs, each ranked against its landmark
-positives and sampled negatives; mAP and recall@1/5/10. The manifest and
-protocol are in place, and the run is scheduled for tonight. No result yet.
-
-### 5.5 PRW
+### 5.4 PRW
 
 Person search: 932 identities, 11,816 full frames, 34,304 boxes, query crops as
 references and gallery frames as queries. The manifest builder is in place and
 the run is scheduled for tonight. No result yet.
 
-### 5.6 Cross-dataset view
+### 5.5 Cross-dataset view
 
 ![Primary metric by dataset](images/week2/dataset_matrix.png)
 
@@ -531,7 +512,7 @@ category-level retail data.
 
 Caveats: the FlickrLogos-32 split is project-specific (one reference per class,
 cross-class negatives, no official P1/P2/P3 split); RPC uses one public shard
-and is category-level; Paris6k and PRW results are still pending.
+and is category-level; PRW results are still pending.
 
 ## 6. References
 
