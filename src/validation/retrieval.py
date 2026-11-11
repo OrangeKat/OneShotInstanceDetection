@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -96,6 +96,7 @@ def evaluate_model(
     matcher: FeatureMatcher,
     queries: Sequence[RetrievalQuery],
     thresholds: Sequence[int] = THRESHOLDS,
+    progress: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     """Rank candidates for each query and compute retrieval metrics.
 
@@ -103,6 +104,7 @@ def evaluate_model(
         matcher: Feature matcher.
         queries: Retrieval queries.
         thresholds: Recall@k values.
+        progress: Optional callback called with the completed query count.
 
     Returns:
         Per-model metrics and per-query records.
@@ -114,7 +116,7 @@ def evaluate_model(
     latencies: list[float] = []
     per_query: list[dict[str, object]] = []
 
-    for query in queries:
+    for index, query in enumerate(queries, start=1):
         image = _load_rgb(query.query_path)
         reference = _crop(image, query.query_box)
         positives = set(query.positives)
@@ -140,6 +142,8 @@ def evaluate_model(
         relevant = [candidate in positives for candidate in ranked]
         ap = average_precision(relevant, len(positives))
         if ap is None:
+            if progress is not None:
+                progress(index)
             continue
         average_precisions.append(ap)
         query_recall: dict[str, bool] = {}
@@ -162,6 +166,8 @@ def evaluate_model(
                 else 0.0,
             }
         )
+        if progress is not None:
+            progress(index)
 
     return {
         "model": matcher.name,

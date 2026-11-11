@@ -38,7 +38,7 @@ from src.models.feature_matching import (
 from src.models.feature_matching.base import FeatureMatcher, MatchResult
 from src.utils.dataset import Box, InstanceDataset, InstanceSample
 from src.utils.diagnostics import match_diagnostics
-from src.utils.logger import get_logger
+from src.utils.logger import ProgressReporter, get_logger
 from src.utils.model_info import parameter_count
 from src.utils.seeding import set_seed
 from src.validation.hpatches import evaluate_model as evaluate_hpatches
@@ -400,6 +400,7 @@ def run_benchmark(
     samples: Sequence[InstanceSample],
     iou_threshold: float,
     loader: Callable[[InstanceSample], InstanceSample] | None = None,
+    progress: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     """Run one matcher over all samples.
 
@@ -408,12 +409,13 @@ def run_benchmark(
         samples: Reference/query pairs.
         iou_threshold: IoU threshold that defines a hit.
         loader: Optional callable that loads a sample's images.
+        progress: Optional callback called with the completed sample count.
 
     Returns:
         A model report.
     """
     records: list[SampleResult] = []
-    for sample in samples:
+    for index, sample in enumerate(samples, start=1):
         if loader is not None:
             sample = loader(sample)
         reference = _reference_crop(sample)
@@ -451,6 +453,8 @@ def run_benchmark(
                 **diagnostics,
             )
         )
+        if progress is not None:
+            progress(index)
     return summarize(matcher.name, records, iou_threshold)
 
 
@@ -723,6 +727,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=0,
         help="Seed for Python, NumPy, PyTorch, and OpenCV RANSAC.",
     )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=0,
+        help="Log progress every N items; 0 auto-sizes to about 20 updates.",
+    )
     return parser.parse_args(argv)
 
 
@@ -757,6 +767,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     log = get_logger(__name__)
     names = _selected_models(args.models)
     set_seed(args.seed)
+    log.info(
+        "benchmark | protocol=%s | models=%s | output=%s",
+        args.protocol,
+        ", ".join(names),
+        args.output,
+    )
     _configure_gpu(args.gpu_mem_fraction, log)
 
     if args.protocol == "hpatches":
@@ -810,22 +826,45 @@ def _run_box(
         "roma_upsample_res": args.roma_upsample_res,
         "seed": args.seed,
     }
+    log.info("box | %d samples | manifest=%s", len(samples), args.manifest)
+    log.info(
+        "config | keypoints=%d ratio=%.2f ransac=%.1f max_side=%d seed=%d",
+        args.max_keypoints,
+        args.ratio,
+        args.ransac_threshold,
+        args.max_side,
+        args.seed,
+    )
     reports: list[dict[str, object]] = []
-    for name in names:
+    for model_index, name in enumerate(names, start=1):
         matcher: FeatureMatcher | None = None
         _reset_gpu_peak()
+        log.info("model %d/%d: %s", model_index, len(names), name)
         try:
             matcher = _make_matcher(name, args)
+            reporter = ProgressReporter(
+                log,
+                name,
+                len(samples),
+                args.progress_every,
+            )
             report = run_benchmark(
                 matcher,
                 samples,
                 args.iou_threshold,
                 loader=dataset.load,
+                progress=reporter.update,
             )
             report.update(_gpu_memory_stats())
             report["params"] = parameter_count(matcher)
             reports.append(report)
             write_reports(reports, config, args.output)
+            log.info(
+                "checkpoint | %d/%d models -> %s",
+                len(reports),
+                len(names),
+                args.output,
+            )
             latency = report["latency_ms"]
             log.info(
                 "%s: hit=%.3f ap50=%.3f iou=%.3f p50=%.1fms peak=%.0fMiB",
@@ -845,6 +884,7 @@ def _run_box(
         finally:
             matcher = None
             _release_gpu()
+    log.info("box complete | %d/%d models | %s", len(reports), len(names), args.output)
     return reports, config
 
 
@@ -887,17 +927,31 @@ def _run_hpatches(
         "roma_upsample_res": args.roma_upsample_res,
         "seed": args.seed,
     }
+    log.info(
+        "hpatches | %d pairs | %d sequences | %s",
+        len(pairs),
+        len({pair.sequence for pair in pairs}),
+        sequences_dir,
+    )
     reports: list[dict[str, object]] = []
-    for name in names:
+    for model_index, name in enumerate(names, start=1):
         matcher: FeatureMatcher | None = None
         _reset_gpu_peak()
+        log.info("model %d/%d: %s", model_index, len(names), name)
         try:
             matcher = _make_matcher(name, args)
-            report = evaluate_hpatches(matcher, pairs)
+            reporter = ProgressReporter(log, name, len(pairs), args.progress_every)
+            report = evaluate_hpatches(matcher, pairs, progress=reporter.update)
             report.update(_gpu_memory_stats())
             report["params"] = parameter_count(matcher)
             reports.append(report)
             write_hpatches_reports(reports, config, args.output)
+            log.info(
+                "checkpoint | %d/%d models -> %s",
+                len(reports),
+                len(names),
+                args.output,
+            )
             log.info(
                 "%s: MMA@3=%s HEA@3=%s median_CE=%s peak=%.0fMiB",
                 name,
@@ -915,6 +969,12 @@ def _run_hpatches(
         finally:
             matcher = None
             _release_gpu()
+    log.info(
+        "hpatches complete | %d/%d models | %s",
+        len(reports),
+        len(names),
+        args.output,
+    )
     return reports, config
 
 
@@ -959,17 +1019,31 @@ def _run_retrieval(
         "roma_upsample_res": args.roma_upsample_res,
         "seed": args.seed,
     }
+    log.info(
+        "retrieval | %d queries | %d candidates | %s",
+        len(queries),
+        sum(candidate_counts),
+        manifest,
+    )
     reports: list[dict[str, object]] = []
-    for name in names:
+    for model_index, name in enumerate(names, start=1):
         matcher: FeatureMatcher | None = None
         _reset_gpu_peak()
+        log.info("model %d/%d: %s", model_index, len(names), name)
         try:
             matcher = _make_matcher(name, args)
-            report = evaluate_retrieval(matcher, queries)
+            reporter = ProgressReporter(log, name, len(queries), args.progress_every)
+            report = evaluate_retrieval(matcher, queries, progress=reporter.update)
             report.update(_gpu_memory_stats())
             report["params"] = parameter_count(matcher)
             reports.append(report)
             write_retrieval_reports(reports, config, args.output)
+            log.info(
+                "checkpoint | %d/%d models -> %s",
+                len(reports),
+                len(names),
+                args.output,
+            )
             log.info(
                 "%s: mAP=%s R@1=%s R@5=%s peak=%.0fMiB",
                 name,
@@ -987,6 +1061,12 @@ def _run_retrieval(
         finally:
             matcher = None
             _release_gpu()
+    log.info(
+        "retrieval complete | %d/%d models | %s",
+        len(reports),
+        len(names),
+        args.output,
+    )
     return reports, config
 
 

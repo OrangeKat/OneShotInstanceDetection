@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +81,7 @@ def evaluate_model(
     matcher: FeatureMatcher,
     pairs: list[HPatchesPair],
     thresholds: tuple[int, ...] = THRESHOLDS,
+    progress: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     """Evaluate a matcher with MMA, HEA, and corner error.
 
@@ -88,6 +89,7 @@ def evaluate_model(
         matcher: Feature matcher to evaluate.
         pairs: HPatches reference/target pairs.
         thresholds: Pixel thresholds for MMA and HEA.
+        progress: Optional callback called with the completed pair count.
 
     Returns:
         Aggregate metrics and per-pair records.
@@ -102,7 +104,7 @@ def evaluate_model(
     pairs_with_matches = 0
     pairs_with_homography = 0
 
-    for pair in pairs:
+    for index, pair in enumerate(pairs, start=1):
         reference = _load_rgb(pair.reference_path)
         query = _load_rgb(pair.query_path)
         height, width = reference.shape[:2]
@@ -154,6 +156,8 @@ def evaluate_model(
                 "latency_ms": latency,
             }
         )
+        if progress is not None:
+            progress(index)
 
     return {
         "model": matcher.name,
