@@ -39,6 +39,7 @@ PRETTY = {
     "aliked_lightglue": "ALIKED+LG",
     "loftr": "LoFTR",
     "flexglue": "FlexGlue",
+    "roma": "RoMa",
 }
 COLORS = {
     "no_matches": "#8c2d04",
@@ -134,6 +135,7 @@ def load_reports() -> dict[str, dict[str, object]]:
     for path in (
         Path("outputs/prw-q200/results.json"),
         Path("outputs/prw-q200-learned/results.json"),
+        Path("outputs/prw-q200-roma/results.json"),
     ):
         if not path.exists():
             continue

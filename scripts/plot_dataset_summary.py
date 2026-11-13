@@ -65,6 +65,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     rpc = read_payload(Path("outputs/rpc/results.json"))
     hpatches = read_payload(Path("outputs/hpatches/results.json"))
     hpatches.update(read_payload(Path("outputs/hpatches-roma-2048/results.json")))
+    prw: dict[str, dict[str, object]] = {}
+    for path in (
+        Path("outputs/prw-q200/results.json"),
+        Path("outputs/prw-q200-learned/results.json"),
+        Path("outputs/prw-q200-roma/results.json"),
+    ):
+        prw.update(read_payload(path))
 
     plot_models(
         flickr,
@@ -87,7 +94,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "HPatches: matcher validation",
         args.output / "hpatches_models.png",
     )
-    plot_matrix(flickr, rpc, hpatches, args.output / "dataset_matrix.png")
+    plot_matrix(flickr, rpc, hpatches, prw, args.output / "dataset_matrix.png")
 
     flickr_rows, _ = load_rows(
         Path("outputs/flickrlogos32/results.json"),
@@ -240,6 +247,7 @@ def plot_matrix(
     flickr: Mapping[str, Mapping[str, object]],
     rpc: Mapping[str, Mapping[str, object]],
     hpatches: Mapping[str, Mapping[str, object]],
+    prw: Mapping[str, Mapping[str, object]],
     path: Path,
 ) -> None:
     """Plot a model x dataset primary-metric heatmap.
@@ -248,6 +256,7 @@ def plot_matrix(
         flickr: Flickr reports.
         rpc: RPC reports.
         hpatches: HPatches reports.
+        prw: PRW reports.
         path: Output path.
     """
     columns = [
@@ -263,9 +272,13 @@ def plot_matrix(
             "HPatches HEA@3",
             {model: float(row.get("hea3", 0.0)) for model, row in hpatches.items()},
         ),
+        (
+            "PRW AP@0.5 (200 q)",
+            {model: float(row.get("ap50", 0.0)) for model, row in prw.items()},
+        ),
     ]
     models = sorted(
-        set(flickr) | set(rpc) | set(hpatches),
+        set(flickr) | set(rpc) | set(hpatches) | set(prw),
         key=lambda model: (
             -float(flickr.get(model, {}).get("ap50", 0.0)),
             PRETTY.get(model, model),
@@ -274,7 +287,7 @@ def plot_matrix(
     matrix = np.asarray(
         [[values.get(model, np.nan) for _, values in columns] for model in models]
     )
-    fig, ax = plt.subplots(figsize=(5.6, 4.4))
+    fig, ax = plt.subplots(figsize=(6.6, 4.4))
     image = ax.imshow(matrix, cmap="Blues", vmin=0, vmax=0.7, aspect="auto")
     ax.set_xticks(range(len(columns)))
     ax.set_xticklabels([label for label, _ in columns], rotation=15)
