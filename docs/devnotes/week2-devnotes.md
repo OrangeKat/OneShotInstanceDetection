@@ -1,4 +1,4 @@
-# Week 2 Devnotes: HPatches Validation and Failure Analysis
+# Week 2 Devnotes: HPatches Validation and Cross-Dataset Results
 
 Week 2 was where the matcher suite finally became a suite. I wired the last
 three models into the same benchmark, ran all eight over HPatches, and then
@@ -13,93 +13,13 @@ landed within about 0.02 of its published AUC, and FlexGlue and LoFTR were
 close. RoMa needed one more fix — the official balanced sampling instead of my
 top-certainty shortcut — and then it matched its published AUC as well.
 
-## Metrics used in these notes
+Across the four datasets, RoMa leads FlickrLogos-32 and HPatches, RPC is a close
+race between SIFT, FlexGlue, and RoMa, and PRW is a negative result for local
+matching.
 
 **Notation.** A *reference* is the crop of the instance being searched for; a
-*query* is the full image being searched; a *GT box* is the annotated instance
-box in the query; *IoU* is the intersection-over-union of a predicted box and a
-GT box. A dash in a table means the metric does not apply (for example, the
-classical matchers have no trainable parameters).
-
-### Box protocol
-
-- **Hit rate** — among positive pairs (queries with at least one GT box), the
-  fraction whose predicted box reaches IoU ≥ 0.5 with any GT box. Negative
-  queries are excluded from the denominator.
-- **AP@0.5** — 11-point interpolated average precision over all predicted
-  pairs, ranked by RANSAC inlier count and then match count. A prediction is a
-  true positive when its best IoU is ≥ 0.5; predictions on negative queries
-  count as false positives. This is a project-specific one-shot AP, not the
-  official FlickrLogos mAP or the RPC category mAP.
-- **Mean IoU** — mean best IoU over positive pairs, with 0 when no box is
-  predicted.
-- **Matches** — correspondences kept after the ratio test or the matcher’s
-  score filter, before RANSAC.
-- **Inliers** — correspondences in the RANSAC consensus set at the 3 px
-  reprojection threshold.
-- **Latency p50 / p95** — per-pair matcher time, excluding image loading;
-  50th and 95th percentiles over the run.
-- **Parameters** — trainable parameters in the matcher’s torch modules,
-  in millions; not applicable to SIFT/ORB/AKAZE.
-- **Peak GPU** — maximum GPU memory allocated during that model’s run, in MiB.
-- **False positive** — a predicted box on a query that has no GT boxes for the
-  instance. **True negative** — a negative query with no prediction.
-
-### HPatches
-
-HPatches is matcher validation, not detection AP. Reference and target images
-are related by a known homography `H`.
-
-- **MMA@k** (matching accuracy) — for each pair with at least one match, the
-  fraction of matches whose reference keypoint, projected through the GT `H`,
-  lands within `k` pixels of its matched target keypoint; averaged over pairs.
-- **HEA@k** (homography estimation accuracy) — fraction of all pairs whose mean
-  four-corner error after the estimated homography is at most `k` pixels. A
-  pair with no estimated homography counts as a failure.
-- **Corner error** — mean Euclidean distance between the four reference corners
-  projected by the GT homography and by the estimated homography. The table
-  reports the median over pairs.
-- **AUC@k** — normalized area under the cumulative corner-error curve up to
-  `k` pixels: 1.0 means every pair is within `k`, 0 means none are. Pairs with
-  no homography are treated as infinite error.
-
-### Per-pair diagnostics
-
-The benchmark stores a stage and a few geometry descriptors for every pair.
-
-- **Stage** — one of:
-  - `hit`: positive pair with IoU ≥ 0.5.
-  - `wrong_box`: homography estimated, but IoU < 0.5.
-  - `no_matches`: zero matches after filtering.
-  - `too_few_matches`: one to three matches (RANSAC needs four).
-  - `ransac_failed`: at least four matches but no homography.
-  - `degenerate_homography`: homography found but ill-conditioned or with an
-    implausible projected area.
-  - `no_prediction`: valid homography but no usable projected box.
-  - `false_positive` / `true_negative`: predicted / did not predict on a
-    negative query.
-- **Inlier ratio** — inliers divided by matches.
-- **Coverage** — convex-hull area of the inlier reference keypoints divided by
-  the reference crop area. Low coverage means the homography comes from a
-  small part of the instance.
-- **Reprojection error** — median distance, in query pixels, between each
-  inlier reference keypoint projected by the estimated homography and its
-  matched query keypoint.
-- **Homography condition number** — `cond(H)`; large values mean an unstable
-  geometry. The validity check rejects values ≥ 10⁸.
-- **Valid homography** — finite, condition number < 10⁸, and projected box
-  area between 10⁻⁴ and 10⁴ times the query image area.
-- **Valid H rate** — fraction of positive pairs with a valid homography.
-- **Box area ratio** — predicted box area divided by the query image area.
-- **Center error** — distance between the predicted box center and the nearest
-  GT box center, divided by the query image diagonal.
-
-### Statistics
-
-- **n** — number of pairs in a slice.
-- **95% bootstrap interval** — 2.5th–97.5th percentile of the mean after
-  resampling the slice with replacement (500 resamples by default). It reflects
-  sampling uncertainty over pairs, not run-to-run seed variance.
+*query* is the image being searched; a *GT box* is the annotated instance box in
+the query; *IoU* is the intersection-over-union of a predicted box and a GT box.
 
 ## 1. What I built
 
@@ -168,8 +88,8 @@ To make failures analyzable without re-running, the benchmark now records the
 per-sample stage (no matches, too few matches, RANSAC failure, degenerate
 homography, wrong box), inlier ratio, coverage, reprojection error, homography
 validity, and parameter count. `make analyze` turns that into stage and slice
-tables with bootstrap intervals, and `make diagnose` renders a single-pair
-overlay with seed-stability and scale / query-crop oracles.
+tables with 95% resampled intervals over pairs, and `make diagnose` renders a
+single-pair overlay with seed-stability and scale / query-crop oracles.
 
 ## 2. The first HPatches run
 
@@ -395,11 +315,41 @@ Where this leaves the harness:
 - Keep recording later harness or model changes here rather than rewriting the
   first-run tables.
 
-## 5. Results by dataset
+## 5. Final results
 
-These are the numbers as they stand on 2026-11-10. I am keeping this section to
-the results themselves; the failure analysis and the “why” will come in a
-separate pass once the last two datasets have run.
+These are the final results for the four datasets in this devlog, as of
+2026-11-12. All runs use released weights and the fixed harness: 2,048
+keypoints, RANSAC at 3 px, raw image coordinates, and the same evaluation for
+every model. The failure analysis and the next modelling step are the subject
+of the next devlog.
+
+**Box metrics** (FlickrLogos-32, RPC, PRW). A prediction is a *hit* when its box
+reaches IoU ≥ 0.5 with any GT box, and *hit rate* is the fraction of positive
+pairs that hit. *AP@0.5* is 11-point interpolated average precision over all
+pairs, ranked by RANSAC inlier count, with a prediction on a negative query
+counted as a false positive — a project-specific one-shot AP, not the official
+FlickrLogos or RPC mAP. *Mean IoU* averages the best IoU over positive pairs,
+scoring 0 when nothing is predicted. *Matches* are correspondences after
+filtering, *inliers* the RANSAC consensus set at 3 px, *p50* per-pair matcher
+time excluding image loading, and *Params* trainable parameters in millions
+(a dash means the model has none). **HPatches metrics** are defined in §2.
+
+### At a glance
+
+| Model | FlickrLogos-32 AP@0.5 | RPC AP@0.5 | HPatches HEA@3 | PRW AP@0.5 (200 q) |
+|---|---:|---:|---:|---:|
+| RoMa | **0.656** | 0.361 | **0.841** | **0.056** |
+| FlexGlue | 0.484 | 0.366 | 0.791 | 0.010 |
+| LoFTR | 0.420 | 0.091 | 0.762 | 0.034 |
+| SuperPoint + LightGlue | 0.420 | 0.175 | 0.748 | 0.055 |
+| SIFT | 0.406 | **0.371** | 0.705 | 0.003 |
+| ALIKED + LightGlue | 0.332 | 0.208 | 0.778 | 0.014 |
+| AKAZE | 0.251 | 0.312 | 0.586 | 0.013 |
+| ORB | 0.237 | 0.299 | 0.529 | 0.000 |
+
+Read the table by column: FlickrLogos-32 is instance-level AP, RPC is
+category-level AP, HPatches is matcher validation, and PRW is a 200-query
+subset of full-frame person search. The metrics are not interchangeable.
 
 ### 5.1 FlickrLogos-32
 
@@ -413,8 +363,11 @@ One worked example, using RoMa on a Texaco query:
 *Left: reference crop (input). Right: query image (input). Green box = GT, red
 box = prediction; green lines = RANSAC inliers, red lines = outliers. This pair
 has 2,048 matches, 1,917 inliers, IoU 0.974, inlier ratio 0.936, inlier coverage
-0.852, and median reprojection error 1.28 px. It is one pair from the 2,528;
-the aggregate numbers are below.*
+0.852, and median reprojection error 1.28 px. Inlier ratio is inliers over
+matches; coverage is the inlier hull over the reference crop area, so a low
+value means the homography came from a small part of the logo; reprojection
+error is the median inlier residual in query pixels. It is one pair from the
+2,528; the aggregate numbers are below.*
 
 | Model | Hit | AP@0.5 | Mean IoU | p50 | Params |
 |---|---:|---:|---:|---:|---:|
@@ -446,7 +399,8 @@ bucket; FlexGlue climbs sharply with area; SuperPoint + LightGlue stays below
 
 1,244 category-level pairs built from one public checkout-scene shard: a
 reference product crop from one scene, other scenes containing the category as
-queries, sampled negatives otherwise.
+queries, sampled negatives otherwise. The columns are the same box metrics as
+above.
 
 | Model | Hit | AP@0.5 | Mean IoU | p50 | Params |
 |---|---:|---:|---:|---:|---:|
@@ -476,6 +430,8 @@ remain low across the range.
 
 116 sequences and 580 pairs under the harness protocol: 2,048 keypoints,
 raw-pixel coordinates, 3 px RANSAC. Matcher validation, not detection AP.
+MMA@3 is match accuracy at 3 px, and HEA@3 the fraction of pairs whose mean
+four-corner error is within 3 px; §2 gives the full definitions.
 
 | Model | MMA@3 | HEA@3 |
 |---|---:|---:|
@@ -498,18 +454,31 @@ first full eight-model run, kept as the trace in §2.
 
 PRW is full-frame person search: 932 identities, 11,816 frames, 34,304 boxes.
 For a tractable first pass I used a 200-query subset: 5,881 pairs, 4,881
-positives. The full manifest is 73,120 pairs; this subset is enough to test
+positives. The full manifest is 73,120 pairs; the subset is enough to test
 whether local matching is viable at all.
 
-| Model | Hit | AP@0.5 | Mean matches | Mean inliers |
-|---|---:|---:|---:|---:|
-| SIFT | 0.001 | 0.003 | 3.4 | 1.1 |
-| ORB | 0.000 | 0.000 | 0.8 | 0.3 |
-| AKAZE | 0.000 | 0.013 | 0.4 | 0.1 |
-| SuperPoint + LightGlue | 0.009 | 0.055 | 11.6 | 4.2 |
-| ALIKED + LightGlue | 0.002 | 0.014 | 9.3 | 2.9 |
-| LoFTR | 0.011 | 0.034 | 28.0 | 4.3 |
-| FlexGlue | 0.003 | 0.010 | 1.9 | 0.8 |
+| Model | Hit | AP@0.5 | Mean matches | Mean inliers | p50 |
+|---|---:|---:|---:|---:|---:|
+| RoMa | **0.115** | **0.056** | 2,048 | 280.7 | 1,499 ms |
+| SuperPoint + LightGlue | 0.009 | 0.055 | 11.6 | 4.2 | 75 ms |
+| LoFTR | 0.011 | 0.034 | 28.0 | 4.3 | 100 ms |
+| ALIKED + LightGlue | 0.002 | 0.014 | 9.3 | 2.9 | 69 ms |
+| AKAZE | 0.000 | 0.013 | 0.4 | 0.1 | 130 ms |
+| FlexGlue | 0.003 | 0.010 | 1.9 | 0.8 | 291 ms |
+| SIFT | 0.001 | 0.003 | 3.4 | 1.1 | 125 ms |
+| ORB | 0.000 | 0.000 | 0.8 | 0.3 | 20 ms |
+
+RoMa is the only model with a meaningful positive hit rate: 11.5%, versus at
+most 1.1% for the rest. Its AP barely moves, though, because it predicts a box
+on **1,000 of 1,000 negative pairs**. The mean inlier count is actually higher
+on negatives (301.5) than on positives (280.7). With 2,048 dense
+correspondences and a 3 px threshold, RANSAC almost always finds a dominant
+plane — the background or another person — even when the reference person is
+absent. Every pair gets one stage — hit, wrong box, no matches, too few
+matches (RANSAC needs four), RANSAC failure, degenerate homography, or no
+prediction. The stage counts make the same point: 4,197 wrong boxes, 561 hits,
+123 degenerate homographies, and 1,000 false positives; there are no no-match
+or RANSAC failures.
 
 The first observation is size. PRW people are small: the median GT box is
 **1.04%** of the query frame, 49% of positives are below 1%, and 77% are below
@@ -525,10 +494,12 @@ appearance, pose, and background.
 
 ![Mean matches per pair across datasets](images/week2/prw_matches_comparison.png)
 
-Matches collapse by roughly 3–30× relative to the other datasets. The stage
-breakdown shows the two failure regimes: classical matchers mostly produce no
-matches or too few matches; the dense matchers produce correspondences but
-place the box on the wrong person or background.
+Outside RoMa, matches collapse by roughly 3–30× relative to the other datasets.
+RoMa always emits 2,048 sampled correspondences by construction, so its match
+count is not comparable; its failure is geometric. The stage breakdown shows
+the two regimes: classical matchers mostly produce no matches or too few
+matches; dense matchers produce correspondences but place the box on the wrong
+person or background.
 
 ![PRW failure stages](images/week2/prw_stages.png)
 
@@ -538,24 +509,25 @@ the background rather than the reference person.
 
 ![Typical SuperPoint + LightGlue PRW overlay](images/week2/prw_typical_lightweight.jpg)
 
-So PRW is currently a negative result for homography-based local matching. The
-remaining test is RoMa: it is dense and may produce more correspondences, but
-the typical pair has only 11 matches, so the ceiling looks low. The RoMa run on
-this 200-query subset is scheduled for tonight.
+PRW is therefore a negative result for end-to-end local matching. RoMa shows
+that a dense matcher can find more real positives, but without a verifier it
+also accepts every negative pair, so AP remains near chance. The full 73k-pair
+manifest was not run; the 200-query subset is enough to establish the failure
+mode.
 
 ### 5.5 Cross-dataset view
 
 ![Primary metric by dataset](images/week2/dataset_matrix.png)
 
-Read the matrix by column, not across datasets: FlickrLogos-32 is instance-level
-AP, RPC is category-level AP, and HPatches is HEA@3. The consistent pattern is
-RoMa at the top of the instance-level and matcher tables, FlexGlue close behind
-with a much lower cost, and the classical models remaining competitive on the
-category-level retail data.
+Read the matrix by column, not across datasets. RoMa leads FlickrLogos-32 and
+HPatches; RPC is close between SIFT, FlexGlue, and RoMa; PRW is uniformly low.
+FlexGlue is the best accuracy/cost compromise on the instance-level data, while
+classical SIFT remains competitive on the category-level retail data.
 
 Caveats: the FlickrLogos-32 split is project-specific (one reference per class,
 cross-class negatives, no official P1/P2/P3 split); RPC uses one public shard
-and is category-level; PRW uses a 200-query subset and its full run is pending.
+and is category-level; PRW uses a 200-query subset and is not directly
+comparable to CUHK-style person-search numbers.
 
 ## 6. References
 
