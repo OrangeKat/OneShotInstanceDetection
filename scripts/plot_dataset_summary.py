@@ -16,7 +16,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.analysis.data import LOGO_SIZE_BINS, LOGO_SIZE_LABELS, Row, load_rows
+from src.analysis.data import OBJECT_SIZE_BINS, OBJECT_SIZE_LABELS, Row, load_rows
 from src.analysis.metrics import binned_hit_rates
 from src.analysis.plots.common import plt, save_figure
 
@@ -210,13 +210,13 @@ def plot_area(
     data = binned_hit_rates(
         rows,
         models,
-        "logo_area_pct",
-        LOGO_SIZE_BINS,
-        LOGO_SIZE_LABELS,
+        "object_area_pct",
+        OBJECT_SIZE_BINS,
+        OBJECT_SIZE_LABELS,
     )
     labels = [
         f"{label}\n(n={data[models[0]][0][index]})"
-        for index, label in enumerate(LOGO_SIZE_LABELS)
+        for index, label in enumerate(OBJECT_SIZE_LABELS)
     ]
     x = np.arange(len(labels))
     fig, ax = plt.subplots(figsize=(8.5, 4.2))

@@ -297,7 +297,7 @@ prediction, false positive, and true negative.
   classes: `paulaner`, `rittersport`, `starbucks`, `fosters`, `becks`.
 
 Generated plots: failure breakdown, per-class hit-rate and mean-IoU heatmaps,
-IoU distribution, hit rate by logo size and GT-instance count, inliers vs IoU,
+IoU distribution, hit rate by object size and GT-instance count, inliers vs IoU,
 precision-recall, and latency distribution.
 
 ### 6.6 Limitations and next steps

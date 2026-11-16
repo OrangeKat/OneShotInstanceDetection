@@ -10,14 +10,14 @@ import numpy as np
 from src.analysis.data import (
     GT_COUNT_BINS,
     GT_COUNT_LABELS,
-    LOGO_SIZE_BINS,
-    LOGO_SIZE_LABELS,
+    OBJECT_SIZE_BINS,
+    OBJECT_SIZE_LABELS,
     Row,
 )
 from src.analysis.metrics import average_precision
 
 SLICES: dict[str, tuple[list[float], list[str], str]] = {
-    "logo_area": (LOGO_SIZE_BINS, LOGO_SIZE_LABELS, "logo_area_pct"),
+    "object_area": (OBJECT_SIZE_BINS, OBJECT_SIZE_LABELS, "object_area_pct"),
     "gt_count": (GT_COUNT_BINS, GT_COUNT_LABELS, "gt_count"),
     "inlier_ratio": (
         [0.0, 0.1, 0.3, 0.6, 1.0],

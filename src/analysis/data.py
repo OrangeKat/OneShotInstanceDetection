@@ -23,8 +23,8 @@ FAILURE_LABELS = {
     "false_positive": "False positive",
     "true_negative": "True negative",
 }
-LOGO_SIZE_BINS = [0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 100.0]
-LOGO_SIZE_LABELS = ["<0.5%", "0.5–1%", "1–2%", "2–5%", "5–10%", "10–20%", "≥20%"]
+OBJECT_SIZE_BINS = [0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 100.0]
+OBJECT_SIZE_LABELS = ["<0.5%", "0.5–1%", "1–2%", "2–5%", "5–10%", "10–20%", "≥20%"]
 GT_COUNT_BINS = [1, 2, 3, 4, 10_000]
 GT_COUNT_LABELS = ["1", "2", "3", "4+"]
 
@@ -45,7 +45,7 @@ class Row:
         gt_count: Number of ground-truth boxes.
         predicted: Whether a box was predicted.
         negative: Whether the query has no target boxes.
-        logo_area_pct: Largest GT box area as a percentage of the query image.
+        object_area_pct: Largest GT box area as a percentage of the query image.
         ref_area_pct: Reference crop area as a percentage of the reference image.
         inlier_ratio: Inliers divided by matches.
         stage: Failure stage label from the benchmark.
@@ -75,7 +75,7 @@ class Row:
     gt_count: int
     predicted: bool
     negative: bool
-    logo_area_pct: float
+    object_area_pct: float
     ref_area_pct: float
     inlier_ratio: float
     stage: str = ""
@@ -176,7 +176,7 @@ def load_rows(
                     gt_count=gt_count,
                     predicted=sample["predicted_box"] is not None,
                     negative=gt_count == 0,
-                    logo_area_pct=100.0 * max_area / max(1.0, width * height),
+                    object_area_pct=100.0 * max_area / max(1.0, width * height),
                     ref_area_pct=100.0 * ref_area / max(1.0, ref_width * ref_height),
                     inlier_ratio=float(
                         sample.get(

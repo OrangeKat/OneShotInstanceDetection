@@ -18,7 +18,7 @@ STAGE_ORDER = [
     "false_positive",
     "true_negative",
 ]
-REPORT_SLICES = ["logo_area", "gt_count", "inlier_ratio", "coverage", "query_area_mp"]
+REPORT_SLICES = ["object_area", "gt_count", "inlier_ratio", "coverage", "query_area_mp"]
 
 
 def render_diagnostics(
