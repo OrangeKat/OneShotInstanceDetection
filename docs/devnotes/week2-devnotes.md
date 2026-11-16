@@ -39,12 +39,12 @@ plumbing.
 
 Two practical fixes went in along the way:
 
-- The box benchmark used to preload every image and was killed by the OOM
-  killer once the learned models were added. It now streams one sample at a
-  time.
-- LoFTR and FlexGlue needed a cap on the input size. Unbounded HPatches images
-  go up to 6.3 MP, which was enough to take the machine down; both wrappers now
-  cap the long side at 640 px and map keypoints back to the original
+- The box benchmark used to preload every image. Once the learned models were
+  added, host memory ran out and the machine froze hard enough to need a
+  restart. It now streams one sample at a time.
+- LoFTR and FlexGlue needed a cap on the input size too. Unbounded HPatches
+  images go up to 6.3 MP, which froze the machine the same way; both wrappers
+  now cap the long side at 640 px and map keypoints back to the original
   resolution.
 
 I also added `src/validation/` for HPatches sequence loading, the MMA/HEA/

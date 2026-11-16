@@ -8,10 +8,11 @@ The reference defines the instance; no class label is required. The benchmark is
 training-free by default: released matcher weights, a fixed harness, and the same
 evaluation for every model.
 
-> **Status (November 2026).** Eight matchers are implemented. Results are
-> available for FlickrLogos-32, RPC, and HPatches. A 200-query PRW subset is
-> benchmarked; local matching collapses on full-frame person search, and the
-> full PRW/RoMa runs are pending.
+> **Status (November 2026).** Eight matchers are implemented and benchmarked on
+> all four datasets: FlickrLogos-32, RPC, HPatches, and a 200-query PRW subset.
+> Local matching collapses on full-frame person search — RoMa finds 11.5% of
+> positive queries but predicts a box on every negative pair — so Week 3 treats
+> person search as a verification problem rather than a matching one.
 
 ## How it works
 
@@ -62,19 +63,21 @@ ratio test for classical matchers, RANSAC at 3 px, and native image coordinates.
 Columns are **not directly comparable** — FlickrLogos-32 and RPC are box AP@0.5
 (RPC is category-level), while HPatches is matcher validation (HEA@3).
 
-| Model | FlickrLogos-32 AP@0.5 | RPC AP@0.5 | HPatches HEA@3 |
-|---|---:|---:|---:|
-| RoMa | **0.656** | 0.361 | **0.841** |
-| FlexGlue | 0.484 | **0.366** | 0.791 |
-| LoFTR | 0.420 | 0.091 | 0.762 |
-| SuperPoint + LightGlue | 0.420 | 0.175 | 0.748 |
-| SIFT | 0.406 | 0.371 | 0.705 |
-| ALIKED + LightGlue | 0.332 | 0.208 | 0.778 |
-| AKAZE | 0.251 | 0.312 | 0.586 |
-| ORB | 0.237 | 0.299 | 0.529 |
+| Model | FlickrLogos-32 AP@0.5 | RPC AP@0.5 | HPatches HEA@3 | PRW AP@0.5 (200 q) |
+|---|---:|---:|---:|---:|
+| RoMa | **0.656** | 0.361 | **0.841** | **0.056** |
+| FlexGlue | 0.484 | 0.366 | 0.791 | 0.010 |
+| LoFTR | 0.420 | 0.091 | 0.762 | 0.034 |
+| SuperPoint + LightGlue | 0.420 | 0.175 | 0.748 | 0.055 |
+| SIFT | 0.406 | **0.371** | 0.705 | 0.003 |
+| ALIKED + LightGlue | 0.332 | 0.208 | 0.778 | 0.014 |
+| AKAZE | 0.251 | 0.312 | 0.586 | 0.013 |
+| ORB | 0.237 | 0.299 | 0.529 | 0.000 |
 
 Rows are sorted by FlickrLogos-32 AP. The HPatches RoMa row uses the post-fix
-balanced-sampling rerun. The full PRW run is pending.
+balanced-sampling rerun. The PRW column is a 200-query subset; the full
+73,120-pair manifest was not run, because the subset already establishes the
+failure mode.
 
 ![RoMa on a FlickrLogos-32 query: reference crop, query, matches, GT and prediction](docs/devnotes/images/week2/sample_result_roma.jpg)
 
@@ -89,12 +92,14 @@ What stands out:
 - Classical SIFT remains competitive on category-level RPC.
 - The learned sparse models lead HPatches but not the retail data.
 
-On a 200-query PRW subset, the best local matcher reaches AP@0.5 0.055:
-full-frame person search is outside the local-matching regime. The full PRW
-run and RoMa are pending.
+On the 200-query PRW subset, RoMa is the only matcher with a real hit rate
+(11.5%), but it predicts a box on all 1,000 negative pairs, so AP@0.5 stalls at
+0.056. Dense RANSAC locks onto the background or another person when the
+reference person is absent: full-frame person search is outside the
+local-matching regime, and the fix is a verifier, not a better matcher.
 
 Full per-dataset tables and figures are in the
-[Week 2 devlog](docs/devnotes/week2-devnotes.md#5-results-by-dataset).
+[Week 2 devlog](docs/devnotes/week2-devnotes.md#5-final-results).
 
 ## Models
 
@@ -241,8 +246,8 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 - [Week 2](docs/devnotes/week2-devnotes.md) — full matcher suite, HPatches
   validation, per-dataset results, and diagnostics.
 
-Weekly states are tagged as `week-N`; `git checkout week-1` shows the project at
-the end of Week 1.
+Weekly states are tagged as `week-N`; `git checkout week-2` shows the project at
+the end of Week 2.
 
 ## References
 
