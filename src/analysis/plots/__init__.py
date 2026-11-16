@@ -2,8 +2,9 @@
 
 from src.analysis.plots.classes import plot_per_class_heatmap
 from src.analysis.plots.factors import (
+    plot_agreement_counts,
     plot_hit_rate_by_gt_count,
-    plot_hit_rate_by_logo_size,
+    plot_hit_rate_by_object_size,
 )
 from src.analysis.plots.failures import (
     plot_failure_breakdown,
@@ -14,9 +15,10 @@ from src.analysis.plots.failures import (
 )
 
 __all__ = [
+    "plot_agreement_counts",
     "plot_failure_breakdown",
     "plot_hit_rate_by_gt_count",
-    "plot_hit_rate_by_logo_size",
+    "plot_hit_rate_by_object_size",
     "plot_inliers_vs_iou",
     "plot_iou_histogram",
     "plot_latency",

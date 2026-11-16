@@ -138,7 +138,8 @@ make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
 
 - Examples: `outputs/flickrlogos32/examples/index.md`.
 - Analysis: `outputs/flickrlogos32/analysis/analysis.md`, `diagnostics.md`,
-  stage/slice CSVs, and plots.
+  stage/slice CSVs, `pair_agreement.csv`, `hard_pairs.csv`,
+  `verifier_separability.csv`, `wrong_box_anatomy.csv`, and plots.
 - The benchmark records per-sample stage, inlier ratio, coverage,
   reprojection error, homography validity, and model parameters. Repeated runs
   can be aggregated with `scripts/aggregate_runs.py`.

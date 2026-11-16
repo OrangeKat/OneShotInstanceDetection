@@ -156,10 +156,12 @@ Every run records:
 | HPatches | MMA@1/3/5/10, HEA@1/3/5/10, corner error, AUC |
 | Cost | Per-pair latency mean / p50 / p95, parameters, peak GPU memory |
 | Diagnostics | Failure stage, inlier ratio, coverage, reprojection error, homography validity |
+| Agreement | Per-pair model agreement, hard pairs no model solves, wrong-box anatomy |
+| Verifier headroom | ROC AUC of each matcher signal as a rejection score |
 
 Outputs are written as `results.json` and `results.md`; box runs can also write
-`analysis/analysis.md`, `analysis/diagnostics.md`, stage and slice CSVs, and
-plots.
+`analysis/analysis.md`, `analysis/diagnostics.md`, stage, slice, agreement, and
+verifier-separability CSVs, and plots.
 
 Useful commands:
 

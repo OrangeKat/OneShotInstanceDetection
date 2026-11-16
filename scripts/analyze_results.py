@@ -23,13 +23,19 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from src.analysis.agreement import (
+    agreement_summary,
+    hard_pair_rows,
+    pair_outcomes,
+)
 from src.analysis.data import load_rows
 from src.analysis.diagnostics_report import render_diagnostics
 from src.analysis.metrics import per_class_metrics
 from src.analysis.plots import (
+    plot_agreement_counts,
     plot_failure_breakdown,
     plot_hit_rate_by_gt_count,
-    plot_hit_rate_by_logo_size,
+    plot_hit_rate_by_object_size,
     plot_inliers_vs_iou,
     plot_iou_histogram,
     plot_latency,
@@ -37,8 +43,9 @@ from src.analysis.plots import (
     plot_pr_curves,
 )
 from src.analysis.report import render_report
+from src.analysis.separability import separability_rows
 from src.analysis.slices import slice_metrics, stage_counts
-from src.analysis.tables import write_csv, write_failure_csv
+from src.analysis.tables import write_csv, write_failure_csv, wrong_box_anatomy
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -127,8 +134,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output / "per_class_mean_iou.png",
     )
     plot_iou_histogram(rows, models, threshold, args.output / "iou_distribution.png")
-    plot_hit_rate_by_logo_size(rows, models, args.output / "hit_rate_by_logo_size.png")
+    plot_hit_rate_by_object_size(
+        rows, models, args.output / "hit_rate_by_object_size.png"
+    )
     plot_hit_rate_by_gt_count(rows, models, args.output / "hit_rate_by_gt_count.png")
+
+    pairs = pair_outcomes(rows, models)
+    write_csv(args.output / "pair_agreement.csv", pairs)
+    write_csv(args.output / "hard_pairs.csv", hard_pair_rows(pairs, models))
+    write_csv(
+        args.output / "verifier_separability.csv",
+        separability_rows(rows, models),
+    )
+    write_csv(
+        args.output / "wrong_box_anatomy.csv",
+        wrong_box_anatomy(rows, models, threshold),
+    )
+    summary = agreement_summary(pairs, models)
+    plot_agreement_counts(
+        summary["distribution"],
+        args.output / "agreement_by_model_count.png",
+    )
     plot_inliers_vs_iou(rows, models, threshold, args.output / "inliers_vs_iou.png")
     plot_pr_curves(rows, models, threshold, args.output / "precision_recall.png")
     plot_latency(rows, models, args.output / "latency_distribution.png")

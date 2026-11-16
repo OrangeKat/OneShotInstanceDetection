@@ -51,6 +51,53 @@ def write_failure_csv(
             )
 
 
+WRONG_BOX_ALIGNED_IOU = 0.1
+
+
+def wrong_box_anatomy(
+    rows: Sequence[Row],
+    models: Sequence[str],
+    threshold: float = 0.5,
+) -> list[dict[str, object]]:
+    """Split wrong boxes into misaligned and wrong-region predictions.
+
+    A misaligned box (IoU between 0.1 and the hit threshold) found the instance
+    but placed the geometry badly. A wrong-region box (IoU below 0.1) locked
+    onto something else entirely, so it is a different failure to fix.
+
+    Args:
+        rows: Enriched rows.
+        models: Model names.
+        threshold: Hit threshold.
+
+    Returns:
+        One record per model.
+    """
+    records: list[dict[str, object]] = []
+    for model in models:
+        predicted = [
+            row
+            for row in rows
+            if row.model == model and row.predicted and not row.negative
+        ]
+        misaligned = [
+            row for row in predicted if WRONG_BOX_ALIGNED_IOU <= row.iou < threshold
+        ]
+        wrong_region = [row for row in predicted if row.iou < WRONG_BOX_ALIGNED_IOU]
+        wrong = len(misaligned) + len(wrong_region)
+        records.append(
+            {
+                "model": model,
+                "predicted": len(predicted),
+                "wrong_boxes": wrong,
+                "misaligned": len(misaligned),
+                "wrong_region": len(wrong_region),
+                "misaligned_share": len(misaligned) / wrong if wrong else 0.0,
+            }
+        )
+    return records
+
+
 def _class_table(
     class_rows: Sequence[Mapping[str, object]],
     models: Sequence[str],
@@ -145,8 +192,8 @@ def _observations(
 
     for model in models:
         positives = [row for row in rows if row.model == model and not row.negative]
-        small = [row for row in positives if row.logo_area_pct < 1.0]
-        large = [row for row in positives if row.logo_area_pct >= 5.0]
+        small = [row for row in positives if row.object_area_pct < 1.0]
+        large = [row for row in positives if row.object_area_pct >= 5.0]
         single = [row for row in positives if row.gt_count == 1]
         multi = [row for row in positives if row.gt_count >= 2]
         small_rate = hit_rate(small)
@@ -162,7 +209,7 @@ def _observations(
         )
         correlation_text = f"{correlation:.2f}" if np.isfinite(correlation) else "n/a"
         lines.append(
-            f"- {model} size effect: logos <1% of the query hit "
+            f"- {model} size effect: objects <1% of the query hit "
             f"**{small_rate:.3f}** ({len(small)} pairs) vs "
             f"**{large_rate:.3f}** for >=5% ({len(large)} pairs); "
             f"single-instance {single_rate:.3f} vs multi-instance "

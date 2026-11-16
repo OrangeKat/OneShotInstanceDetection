@@ -7,16 +7,23 @@ from pathlib import Path
 
 import numpy as np
 
+from src.analysis.agreement import (
+    agreement_by_model,
+    agreement_summary,
+    hard_pair_rows,
+    pair_outcomes,
+)
 from src.analysis.data import (
     FAILURE_ORDER,
     GT_COUNT_BINS,
     GT_COUNT_LABELS,
-    LOGO_SIZE_BINS,
-    LOGO_SIZE_LABELS,
+    OBJECT_SIZE_BINS,
+    OBJECT_SIZE_LABELS,
     Row,
 )
 from src.analysis.metrics import binned_hit_rates, failure_counts
-from src.analysis.tables import _class_table, _observations
+from src.analysis.separability import best_separability, separability_rows
+from src.analysis.tables import _class_table, _observations, wrong_box_anatomy
 
 
 def render_report(
@@ -98,21 +105,21 @@ def render_report(
     size_data = binned_hit_rates(
         rows,
         models,
-        "logo_area_pct",
-        LOGO_SIZE_BINS,
-        LOGO_SIZE_LABELS,
+        "object_area_pct",
+        OBJECT_SIZE_BINS,
+        OBJECT_SIZE_LABELS,
     )
     lines.extend(
         [
             "",
-            "## Hit rate by logo size",
+            "## Hit rate by object size",
             "",
             "| Largest GT box / query | Pairs | " + " | ".join(models) + " |",
             "|---|---:|" + "---:|" * len(models),
         ]
     )
     shared_counts = size_data[models[0]][0] if models else []
-    for index, label in enumerate(LOGO_SIZE_LABELS):
+    for index, label in enumerate(OBJECT_SIZE_LABELS):
         cells = []
         for model in models:
             rate = size_data[model][1][index]
@@ -147,6 +154,101 @@ def render_report(
             f"| {label} | {shared_counts[index]} | " + " | ".join(cells) + " |"
         )
 
+    pairs = pair_outcomes(rows, models)
+    summary = agreement_summary(pairs, models)
+    lines.extend(
+        [
+            "",
+            "## Model agreement",
+            "",
+            "A pair counts as solved when any model reaches the hit threshold. "
+            "Pairs no model solves are treated as a property of the data, not "
+            "of a matcher.",
+            "",
+            "| Positive pairs | Solved by all | Solved by any | Solved by none "
+            "| Best-case hit rate |",
+            "|---:|---:|---:|---:|---:|",
+            f"| {summary['pairs']} | {summary['solved_by_all']} "
+            f"| {summary['solved_by_any']} | {summary['hard_pairs']} "
+            f"| {float(summary['oracle_hit_rate']):.3f} |",
+            "",
+            "| Model | Pairs solved | Solved by no other model |",
+            "|---|---:|---:|",
+        ]
+    )
+    for record in agreement_by_model(pairs):
+        lines.append(f"| {record['model']} | {record['solved']} | {record['unique']} |")
+
+    lines.extend(["", "## Hard pairs", ""])
+    hard = hard_pair_rows(pairs, models)
+    if hard:
+        lines.extend(
+            [
+                "Positive pairs that every model misses. These are the inputs "
+                "that a better matcher cannot fix by itself.",
+                "",
+                "| Class | Query |",
+                "|---|---|",
+            ]
+        )
+        for record in hard[:10]:
+            lines.append(f"| {record['class_name']} | {record['query']} |")
+        if len(hard) > 10:
+            lines.append("")
+            lines.append(f"Plus {len(hard) - 10} more; see `hard_pairs.csv`.")
+    else:
+        lines.append("Every positive pair is solved by at least one model.")
+
+    anatomy = wrong_box_anatomy(rows, models, threshold)
+    lines.extend(
+        [
+            "",
+            "## Wrong-box anatomy",
+            "",
+            "Misaligned means IoU between 0.1 and the hit threshold: the instance "
+            "was found, the box is wrong. Wrong region means IoU below 0.1: a "
+            "different object or the background.",
+            "",
+            "| Model | Predictions | Wrong boxes | Misaligned | Wrong region "
+            "| Misaligned share |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for record in anatomy:
+        lines.append(
+            f"| {record['model']} | {record['predicted']} "
+            f"| {record['wrong_boxes']} | {record['misaligned']} "
+            f"| {record['wrong_region']} "
+            f"| {float(record['misaligned_share']):.3f} |"
+        )
+
+    separability = separability_rows(rows, models)
+    best = best_separability(separability)
+    lines.extend(
+        [
+            "",
+            "## Verifier separability",
+            "",
+            "ROC AUC of each recorded matcher signal as a rejection score. "
+            "`positive_vs_negative` asks whether the signal separates real pairs "
+            "from queries with no instance; `hit_vs_miss_positives` asks whether "
+            "it separates correct from incorrect localizations. 0.5 is chance, "
+            "so this is the headroom a verifier could use without retraining "
+            "the matcher.",
+            "",
+            "| Model | Positive vs negative | Hit vs miss | Best score |",
+            "|---|---:|---:|---|",
+        ]
+    )
+    for model in models:
+        model_best = best.get(model, {})
+        pn = model_best.get("positive_vs_negative")
+        hm = model_best.get("hit_vs_miss_positives")
+        pn_text = f"{float(pn['auc']):.3f}" if pn else "n/a"
+        hm_text = f"{float(hm['auc']):.3f}" if hm else "n/a"
+        name = f"{pn['score']}" if pn else "n/a"
+        lines.append(f"| {model} | {pn_text} | {hm_text} | {name} |")
+
     lines.extend(
         [
             "",
@@ -156,7 +258,8 @@ def render_report(
             "- [Per-class hit rate](per_class_hit_rate.png)",
             "- [Per-class mean IoU](per_class_mean_iou.png)",
             "- [IoU distribution](iou_distribution.png)",
-            "- [Hit rate by logo size](hit_rate_by_logo_size.png)",
+            "- [Hit rate by object size](hit_rate_by_object_size.png)",
+            "- [Model agreement](agreement_by_model_count.png)",
             "- [Hit rate by GT instance count](hit_rate_by_gt_count.png)",
             "- [Inliers vs IoU](inliers_vs_iou.png)",
             "- [Precision-recall](precision_recall.png)",
