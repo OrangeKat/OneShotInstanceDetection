@@ -744,3 +744,100 @@ input:hover {
     width: min(400px, calc(100vw - 32px));
   }
 }
+
+/* ------------------------------------------------------------- references */
+.field.compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.field.compact > span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+}
+
+.references {
+  display: grid;
+  grid-template-columns: 288px 1fr;
+  height: calc(100vh - 52px);
+  min-height: 0;
+}
+
+.ref-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.ref-main {
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.cand-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.cand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.cand:hover {
+  border-color: var(--border-strong);
+}
+
+.cand.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cand img {
+  width: 100%;
+  height: 132px;
+  object-fit: contain;
+  background: repeating-conic-gradient(#1b232e 0% 25%, #1f2833 0% 50%) 50% / 12px 12px;
+  border-radius: 5px;
+}
+
+.cand-meta {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ref-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}

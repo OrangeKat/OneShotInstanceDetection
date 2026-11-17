@@ -175,7 +175,7 @@ make figures          # regenerate the devlog figures
 
 RANSAC is seeded with `--seed`; small run-to-run variation remains expected.
 
-### Pair inspector
+### Pair inspector and reference picker
 
 `make ui` serves a local page over a manifest: pick a pair, pick a matcher, and
 see what the matcher returned **before RANSAC**. Every query point is linked to
@@ -186,10 +186,25 @@ land if the geometry held) and can overlay keypoint density or an occlusion
 sweep that shows which reference regions the matches depend on.
 
 ```bash
-make ui                                        # FlickrLogos-32, all models
+make ui                                        # every dataset with a manifest
 make ui ARGS="--models sift roma --port 8800"  # one model, other port
-uv run python main.py ui --hard-csv outputs/rpc/analysis/hard_pairs.csv
+uv run python main.py ui --manifests rpc=data/rpc/manifest.json
 ```
+
+The **References** tab addresses a real problem: the default rule picks the
+median-area crop per class, and some of those crops are occluded, low
+resolution, or not the mark at all. For FlickrLogos-32 every class image is
+offered as an alternative with its crop preview; choosing one writes
+`configs/references.json`, and
+
+```bash
+make data-flickr ARGS="--skip-download --references configs/references.json"
+```
+
+rebuilds the manifest around the choice. RPC exposes one crop per category, so
+the tab records a review flag (`ok`, `low-res`, `occluded`, `wrong-content`,
+`unusable`) instead of an alternative. Flags and choices are versioned, so a
+review survives a re-clone.
 
 Runs are cached under `outputs/ui/`, so revisiting a pair is instant. The UI is
 read-only: it never writes to `outputs/*/results.json` and holds no experiment

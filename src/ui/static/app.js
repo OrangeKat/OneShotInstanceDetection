@@ -11,7 +11,11 @@ const STATE = {
   view: { scale: 1, tx: 0, ty: 0 },
   occlusion: null,
   lineWidth: Number(localStorage.getItem("lineWidth") || 2),
+  dataset: null,
+  datasets: [],
 };
+
+const REFS = { instances: [], current: null, candidates: [], chosen: null, statuses: [] };
 
 const ABLATION = {
   runs: [],
@@ -67,6 +71,7 @@ async function loadModels() {
 
 async function loadPairs() {
   const payload = await api("/api/pairs", {
+    dataset: STATE.dataset,
     search: el("search").value,
     hard: el("hard-only").checked ? 1 : 0,
     positives: 1,
@@ -119,6 +124,7 @@ async function loadDump(refresh = false) {
   el("viewer").classList.add("busy");
   try {
     const dump = await api("/api/pair", {
+      dataset: STATE.dataset,
       index: STATE.index,
       model: STATE.model,
       refresh: refresh ? 1 : 0,
@@ -193,8 +199,9 @@ function draw() {
     });
     root.append(node);
   };
-  image(`/img/reference?index=${dump.index}`, 0, offsetY, refW, refH);
-  image(`/img/query?index=${dump.index}`, queryX, offsetY, queryW, queryH);
+  const dataset = encodeURIComponent(STATE.dataset ?? "");
+  image(`/img/reference?index=${dump.index}&dataset=${dataset}`, 0, offsetY, refW, refH);
+  image(`/img/query?index=${dump.index}&dataset=${dataset}`, queryX, offsetY, queryW, queryH);
 
   const toRef = (match) => [match.x0 * refScale, match.y0 * refScale + offsetY];
   const toQuery = (match) => [
@@ -418,6 +425,7 @@ async function runOcclusion() {
   button.textContent = "running…";
   try {
     STATE.occlusion = await api("/api/occlusion", {
+      dataset: STATE.dataset,
       index: STATE.index,
       model: STATE.model,
       grid: 6,
@@ -466,7 +474,17 @@ function wireEvents() {
   }
   el("occlusion").addEventListener("click", () => runOcclusion());
   el("tab-inspector").addEventListener("click", () => showView("inspector"));
+  el("tab-references").addEventListener("click", () => showView("references"));
   el("tab-ablations").addEventListener("click", () => showView("ablations"));
+  el("dataset").addEventListener("change", async (event) => {
+    STATE.dataset = event.target.value;
+    persist("dataset", STATE.dataset);
+    STATE.index = null;
+    STATE.dump = null;
+    await loadPairs();
+    if (STATE.pairs.length) await selectPair(STATE.pairs[0].index);
+  });
+  el("ref-save").addEventListener("click", saveReference);
   el("ablation-form").addEventListener("submit", submitAblation);
   el("refresh-runs").addEventListener("click", () => loadAblations());
   el("run-model").addEventListener("change", () => renderRuns());
@@ -530,12 +548,17 @@ function wireHelp() {
 }
 
 function showView(view) {
-  const inspector = view === "inspector";
-  el("view-inspector").hidden = !inspector;
-  el("view-ablations").hidden = inspector;
-  el("tab-inspector").classList.toggle("active", inspector);
-  el("tab-ablations").classList.toggle("active", !inspector);
-  if (!inspector) loadAblations();
+  const views = {
+    inspector: el("view-inspector"),
+    references: el("view-references"),
+    ablations: el("view-ablations"),
+  };
+  for (const [name, node] of Object.entries(views)) {
+    node.hidden = name !== view;
+    el(`tab-${name}`).classList.toggle("active", name === view);
+  }
+  if (view === "ablations") loadAblations();
+  if (view === "references") loadReferences();
 }
 
 function metric(run, model) {
@@ -691,10 +714,151 @@ async function submitAblation(event) {
   return false;
 }
 
+async function loadDatasets() {
+  const payload = await api("/api/datasets");
+  STATE.datasets = payload.datasets;
+  const select = el("dataset");
+  select.innerHTML = "";
+  for (const dataset of payload.datasets) {
+    const option = document.createElement("option");
+    option.value = dataset.name;
+    option.textContent = `${dataset.name} · ${dataset.pairs} pairs`;
+    select.append(option);
+  }
+  const saved = localStorage.getItem("ui:dataset");
+  const names = payload.datasets.map((dataset) => dataset.name);
+  STATE.dataset = names.includes(saved) ? saved : names[0] ?? null;
+  select.value = STATE.dataset;
+}
+
+async function loadReferences() {
+  if (!STATE.dataset) return;
+  const payload = await api("/api/references", { dataset: STATE.dataset });
+  REFS.instances = payload.instances;
+  REFS.statuses = payload.statuses;
+  el("ref-counts").textContent = `${payload.instances.length} instances`;
+  const flagged = payload.instances.filter((item) => item.status !== "ok").length;
+  el("ref-status").textContent = flagged ? `${flagged} flagged` : "all ok";
+  fillSelect(el("ref-flag"), payload.statuses, el("ref-flag").value || "ok");
+  renderRefList();
+}
+
+function renderRefList() {
+  const list = el("ref-list");
+  list.innerHTML = "";
+  for (const item of REFS.instances) {
+    const row = document.createElement("li");
+    if (item.instance === REFS.current) row.classList.add("active");
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = item.instance;
+    const right = document.createElement("span");
+    right.className = "meta-right";
+    if (item.status !== "ok") {
+      const badge = document.createElement("span");
+      badge.className = "badge hard";
+      badge.textContent = item.status;
+      right.append(badge);
+    }
+    const count = document.createElement("span");
+    count.className = "query";
+    count.textContent = `${item.pairs}`;
+    right.append(count);
+    row.append(name, right);
+    row.addEventListener("click", () => selectInstance(item.instance));
+    list.append(row);
+  }
+}
+
+async function selectInstance(instance) {
+  REFS.current = instance;
+  const info = REFS.instances.find((item) => item.instance === instance);
+  REFS.chosen = info?.selected_image
+    ? { image: info.selected_image }
+    : { image: info?.image };
+  el("ref-title").textContent = instance;
+  el("ref-flag").value = info?.status ?? "ok";
+  el("ref-note").value = info?.note ?? "";
+  renderRefList();
+  const payload = await api("/api/reference/candidates", {
+    dataset: STATE.dataset,
+    instance,
+  });
+  REFS.candidates = payload.candidates;
+  renderCandidates();
+}
+
+function renderCandidates() {
+  const grid = el("cand-grid");
+  grid.innerHTML = "";
+  if (!REFS.candidates.length) {
+    grid.innerHTML = '<p class="empty">No candidate crops for this instance.</p>';
+    return;
+  }
+  el("ref-subtitle").textContent =
+    `${REFS.candidates.length} candidate crop(s) · click to choose`;
+  for (const candidate of REFS.candidates) {
+    const card = document.createElement("button");
+    card.className = "cand";
+    card.type = "button";
+    const active = REFS.chosen?.image === candidate.image;
+    if (active) card.classList.add("active");
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.src = `${candidate.url}&dataset=${encodeURIComponent(STATE.dataset)}`;
+    img.alt = `${candidate.image} crop`;
+    const meta = document.createElement("span");
+    meta.className = "cand-meta";
+    meta.textContent = `${candidate.width}×${candidate.height}`;
+    if (candidate.current) {
+      const badge = document.createElement("span");
+      badge.className = "badge quiet";
+      badge.textContent = "in use";
+      meta.append(" ", badge);
+    }
+    card.append(img, meta);
+    card.addEventListener("click", () => {
+      REFS.chosen = { image: candidate.image, box: candidate.box };
+      renderCandidates();
+    });
+    grid.append(card);
+  }
+}
+
+async function saveReference() {
+  if (!REFS.current) return;
+  const button = el("ref-save");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/references", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset: STATE.dataset,
+        instance: REFS.current,
+        image: REFS.chosen?.image,
+        box: REFS.chosen?.box,
+        status: el("ref-flag").value,
+        note: el("ref-note").value,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || response.statusText);
+    el("ref-saved").textContent = "saved";
+    await loadReferences();
+    renderRefList();
+  } catch (error) {
+    el("ref-saved").textContent = `failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function boot() {
   try {
     restorePersisted();
     await loadModels();
+    await loadDatasets();
     await loadPairs();
     wireEvents();
     if (STATE.pairs.length) {

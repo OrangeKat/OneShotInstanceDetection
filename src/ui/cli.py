@@ -7,9 +7,15 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.pipeline import MODELS
+from src.ui.references import SELECTION_PATH
 from src.ui.server import serve
 
 __all__ = ["parse_args", "main"]
+
+DEFAULT_MANIFESTS = {
+    "flickrlogos32": Path("data/flickrlogos32/manifest.json"),
+    "rpc": Path("data/rpc/manifest.json"),
+}
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -23,13 +29,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         prog="main.py ui",
-        description="Serve a local pair inspector.",
+        description="Serve a local pair inspector and reference picker.",
     )
     parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=Path("data/flickrlogos32/manifest.json"),
-        help="Benchmark manifest to browse.",
+        "--manifests",
+        nargs="+",
+        default=None,
+        metavar="NAME=PATH",
+        help=(
+            "Datasets to expose, as name=path. Defaults to every dataset whose "
+            "manifest exists under data/."
+        ),
     )
     parser.add_argument(
         "--models",
@@ -43,7 +53,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         nargs="*",
         type=Path,
         default=None,
-        help="Hard-pair CSVs; defaults to the analysis output for the dataset.",
+        help="Hard-pair CSVs; defaults to each dataset's analysis output.",
+    )
+    parser.add_argument(
+        "--selection",
+        type=Path,
+        default=SELECTION_PATH,
+        help="Reference selection JSON.",
     )
     parser.add_argument(
         "--cache",
@@ -62,6 +78,57 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _manifests(values: Sequence[str] | None) -> dict[str, Path]:
+    """Resolve the datasets to expose.
+
+    Args:
+        values: ``name=path`` entries, or ``None`` for the defaults.
+
+    Returns:
+        Dataset key to manifest path.
+
+    Raises:
+        SystemExit: If no dataset is available.
+    """
+    if values:
+        manifests: dict[str, Path] = {}
+        for value in values:
+            name, _, path = value.partition("=")
+            if not path:
+                name, path = Path(path or value).parent.name, value
+            manifests[name] = Path(path)
+        return manifests
+    available = {
+        name: path for name, path in DEFAULT_MANIFESTS.items() if path.exists()
+    }
+    if not available:
+        raise SystemExit(
+            "no manifest found; run make data-flickr or pass --manifests name=path"
+        )
+    return available
+
+
+def _hard_csvs(
+    manifests: dict[str, Path],
+    values: Sequence[Path] | None,
+) -> dict[str, list[Path]]:
+    """Resolve hard-pair CSVs per dataset.
+
+    Args:
+        manifests: Dataset key to manifest path.
+        values: Explicit CSV paths, or ``None`` for the analysis defaults.
+
+    Returns:
+        Dataset key to CSV paths.
+    """
+    if values:
+        return {name: list(values) for name in manifests}
+    return {
+        name: [Path("outputs") / name / "analysis" / "hard_pairs.csv"]
+        for name in manifests
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the inspector.
 
@@ -72,16 +139,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         Process exit code.
     """
     args = parse_args(argv)
-    hard_csv = args.hard_csv
-    if hard_csv is None:
-        dataset = args.manifest.parent.name
-        hard_csv = [Path("outputs") / dataset / "analysis" / "hard_pairs.csv"]
+    manifests = _manifests(args.manifests)
     return serve(
-        args.manifest,
+        manifests,
         models=args.models,
-        hard_csv=hard_csv,
+        hard_csv=_hard_csvs(manifests, args.hard_csv),
         cache_dir=args.cache,
         host=args.host,
         port=args.port,
         max_keypoints=args.max_keypoints,
+        selection_path=args.selection,
     )

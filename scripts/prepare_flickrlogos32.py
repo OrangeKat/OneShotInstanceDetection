@@ -20,46 +20,30 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import re
 import shutil
+import sys
 import time
 import urllib.parse
 import urllib.request
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.utils.openlogo import (  # noqa: E402
+    Box,
+    LogoImage,
+    box_area,
+    filter_flickrlogos_images,
+    image_path,
+)
 
 BASE_URL = "https://huggingface.co/datasets/Voxel51/OpenLogo/resolve/main"
 SAMPLES_URL = f"{BASE_URL}/samples.json"
 EXPECTED_IMAGES = 2240
 EXPECTED_CLASSES = 32
-NUMERIC_NAME = re.compile(r"^\d+\.(?:jpg|jpeg|png)$", re.IGNORECASE)
-TEXT_CLASSES = {"adidas_text": "adidas", "heineken_text": "heineken"}
-
-Box = tuple[float, float, float, float]
-
-
-@dataclass
-class LogoImage:
-    """One FlickrLogos-32 image with absolute boxes for one class.
-
-    Attributes:
-        filepath: Path inside the OpenLogo repository.
-        name: Image file name.
-        class_name: Logo class after text-class remapping.
-        width: Image width.
-        height: Image height.
-        boxes: Absolute ``(x1, y1, x2, y2)`` boxes for the class.
-    """
-
-    filepath: str
-    name: str
-    class_name: str
-    width: int
-    height: int
-    boxes: tuple[Box, ...]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -92,6 +76,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Cross-class negative queries per logo class (0 disables).",
     )
     parser.add_argument("--seed", type=int, default=0, help="Negative sampling seed.")
+    parser.add_argument(
+        "--references",
+        type=Path,
+        help="JSON mapping class to a chosen reference (configs/references.json).",
+    )
     parser.add_argument(
         "--skip-download",
         action="store_true",
@@ -127,10 +116,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         download_images(images, data_dir)
 
+    references = load_references(args.references)
     manifest = build_manifest(
         images,
         negatives_per_class=args.negatives_per_class,
         seed=args.seed,
+        references=references,
     )
     output = data_dir / "manifest.json"
     output.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -195,51 +186,24 @@ def download_images(images: Sequence[LogoImage], data_dir: Path) -> None:
         raise SystemExit(f"{len(failures)} image downloads failed")
 
 
-def filter_flickrlogos_images(
-    records: Sequence[Mapping[str, object]],
-) -> list[LogoImage]:
-    """Extract FlickrLogos-32 positives from OpenLogo sample records.
+def load_references(path: Path | None) -> dict[str, Mapping[str, object]]:
+    """Load chosen reference crops from the UI selection file.
 
     Args:
-        records: OpenLogo ``samples`` records.
+        path: Selection JSON, or ``None`` to keep the default rule.
 
     Returns:
-        Images with mapped class labels and absolute boxes.
+        Dataset section of the selection file, keyed by class.
     """
-    images: list[LogoImage] = []
-    seen: set[tuple[str, str]] = set()
-    for record in records:
-        filepath = str(record["filepath"])
-        name = Path(filepath).name
-        if not NUMERIC_NAME.match(name):
-            continue
-        width = int(record["width"])
-        height = int(record["height"])
-        ground_truth = record["ground_truth"]
-        detections = ground_truth.get("detections", [])
-        boxes_by_class: dict[str, list[Box]] = defaultdict(list)
-        for detection in detections:
-            label = TEXT_CLASSES.get(str(detection["label"]), str(detection["label"]))
-            box = absolute_box(detection, width, height)
-            if box is not None:
-                boxes_by_class[label].append(box)
-        if len(boxes_by_class) != 1:
-            continue
-        class_name, boxes = next(iter(boxes_by_class.items()))
-        if (class_name, name) in seen:
-            continue
-        seen.add((class_name, name))
-        images.append(
-            LogoImage(
-                filepath=filepath,
-                name=name,
-                class_name=class_name,
-                width=width,
-                height=height,
-                boxes=tuple(boxes),
-            )
-        )
-    return images
+    if path is None:
+        return {}
+    payload = json.loads(path.read_text())
+    section = payload.get("flickrlogos32", payload)
+    return {
+        str(name): record
+        for name, record in section.items()
+        if isinstance(record, Mapping) and record.get("image")
+    }
 
 
 def build_manifest(
@@ -247,6 +211,7 @@ def build_manifest(
     *,
     negatives_per_class: int,
     seed: int,
+    references: Mapping[str, Mapping[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     """Build one reference and many queries per logo class.
 
@@ -254,6 +219,7 @@ def build_manifest(
         images: FlickrLogos-32 positives.
         negatives_per_class: Cross-class negative queries per class.
         seed: Negative sampling seed.
+        references: Optional class to chosen crop mapping from the UI.
 
     Returns:
         Manifest records.
@@ -269,8 +235,11 @@ def build_manifest(
             group,
             key=lambda image: max(box_area(box) for box in image.boxes),
         )
-        reference = by_area[len(by_area) // 2]
-        reference_box = max(reference.boxes, key=box_area)
+        reference, reference_box = _choose_reference(
+            group,
+            by_area,
+            (references or {}).get(class_name),
+        )
         for query in group:
             if query is reference:
                 continue
@@ -306,6 +275,35 @@ def build_manifest(
                     )
                 )
     return records
+
+
+def _choose_reference(
+    group: Sequence[LogoImage],
+    by_area: Sequence[LogoImage],
+    chosen: Mapping[str, object] | None,
+) -> tuple[LogoImage, Box]:
+    """Pick the reference image and crop for one class.
+
+    Args:
+        group: Images of the class, sorted by name.
+        by_area: Images of the class sorted by logo area.
+        chosen: Optional UI choice with ``image`` and ``box`` keys.
+
+    Returns:
+        The reference image and its crop box.
+    """
+    if chosen and chosen.get("image"):
+        selected = next(
+            (image for image in group if image.name == chosen["image"]),
+            None,
+        )
+        if selected is not None:
+            box_value = chosen.get("box")
+            if isinstance(box_value, (list, tuple)) and len(box_value) == 4:
+                return selected, tuple(float(value) for value in box_value)  # type: ignore[return-value]
+            return selected, max(selected.boxes, key=box_area)
+    reference = by_area[len(by_area) // 2]
+    return reference, max(reference.boxes, key=box_area)
 
 
 def _record(
@@ -345,56 +343,6 @@ def _record(
             "original": query.filepath,
         },
     }
-
-
-def absolute_box(
-    detection: Mapping[str, object],
-    width: int,
-    height: int,
-) -> Box | None:
-    """Convert a normalized FiftyOne detection to an absolute box.
-
-    Args:
-        detection: Detection with a normalized ``bounding_box``.
-        width: Image width.
-        height: Image height.
-
-    Returns:
-        A clipped absolute box, or ``None`` for a degenerate box.
-    """
-    x, y, box_width, box_height = (float(value) for value in detection["bounding_box"])
-    x1 = max(0.0, min(width - 1.0, x * width))
-    y1 = max(0.0, min(height - 1.0, y * height))
-    x2 = max(0.0, min(width - 1.0, (x + box_width) * width))
-    y2 = max(0.0, min(height - 1.0, (y + box_height) * height))
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return (x1, y1, x2, y2)
-
-
-def box_area(box: Box) -> float:
-    """Return the area of a box.
-
-    Args:
-        box: ``(x1, y1, x2, y2)`` box.
-
-    Returns:
-        The box area.
-    """
-    return (box[2] - box[0]) * (box[3] - box[1])
-
-
-def image_path(data_dir: Path, image: LogoImage) -> Path:
-    """Return the local path for an image.
-
-    Args:
-        data_dir: Dataset root directory.
-        image: Image to locate.
-
-    Returns:
-        The local image path.
-    """
-    return data_dir / "images" / image.class_name / image.name
 
 
 if __name__ == "__main__":

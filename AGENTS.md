@@ -41,7 +41,8 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `src/models/feature_matching/roma/_vendor/` | vendored RoMa inference code (MIT) |
 | `src/models/feature_matching/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
 | `src/analysis/` | failure-analysis data, metrics, plots, tables, report |
-| `src/ui/` | local pair inspector served by `main.py ui` |
+| `src/ui/` | local pair inspector and reference picker served by `main.py ui` |
+| `configs/` | committed review state, e.g. `references.json` |
 | `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
 | `src/utils/logger.py` | stderr logger |
@@ -132,7 +133,7 @@ Run every dataset whose data is present with
 ```bash
 make examples
 make analyze
-make ui ARGS="--models sift roma"    # pair inspector, http://127.0.0.1:8765
+make ui ARGS="--models sift roma"    # inspector + reference picker, :8765
 make diagnose MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle"
 make compare
 make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"

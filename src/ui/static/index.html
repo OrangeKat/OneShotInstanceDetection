@@ -17,10 +17,18 @@
         <button id="tab-inspector" class="tab active" type="button" role="tab">
           Inspector
         </button>
+        <button id="tab-references" class="tab" type="button" role="tab">
+          References
+        </button>
         <button id="tab-ablations" class="tab" type="button" role="tab">
           Ablations
         </button>
       </nav>
+
+      <label class="field compact">
+        <span>Dataset</span>
+        <select id="dataset"></select>
+      </label>
 
       <div class="spacer"></div>
 
@@ -171,6 +179,49 @@
         </div>
 
         <div id="tooltip" class="tooltip" hidden></div>
+      </section>
+    </main>
+
+    <main class="references" id="view-references" hidden>
+      <aside class="ref-side">
+        <div class="sidebar-head">
+          <div class="sidebar-row">
+            <span class="counts" id="ref-counts"></span>
+            <span class="badge quiet" id="ref-status"></span>
+          </div>
+        </div>
+        <ul id="ref-list" class="pair-list"></ul>
+      </aside>
+      <section class="ref-main">
+        <div class="panel">
+          <div class="panel-head">
+            <h2 id="ref-title">Reference</h2>
+            <span class="muted" id="ref-subtitle">
+              pick the crop that best shows the instance
+            </span>
+          </div>
+          <div class="cand-grid" id="cand-grid">
+            <p class="empty">Pick an instance on the left.</p>
+          </div>
+          <div class="ref-form">
+            <label class="field">
+              <span>Status</span>
+              <select id="ref-flag"></select>
+            </label>
+            <label class="field grow">
+              <span>Note</span>
+              <input id="ref-note" type="text" placeholder="e.g. occluded by foliage" />
+            </label>
+            <button class="btn" id="ref-save" type="button">Save choice</button>
+            <span class="hint" id="ref-saved"></span>
+          </div>
+          <p class="hint">
+            FlickrLogos-32 choices are applied by
+            <code>make data-flickr ARGS="--skip-download --references configs/references.json"</code>,
+            then re-run the benchmark. RPC has one crop per category, so this
+            view records a review flag rather than a choice.
+          </p>
+        </div>
       </section>
     </main>
 
