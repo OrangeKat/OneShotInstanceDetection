@@ -398,6 +398,9 @@ input:hover {
 .counts {
   color: var(--text-faint);
   font-size: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.35;
 }
 
 .pair-list {
