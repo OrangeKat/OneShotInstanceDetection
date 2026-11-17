@@ -60,7 +60,8 @@ async function loadModels() {
     option.textContent = model;
     select.append(option);
   }
-  STATE.model = STATE.models[0] ?? null;
+  const saved = localStorage.getItem("model");
+  STATE.model = STATE.models.includes(saved) ? saved : STATE.models[0] ?? null;
   select.value = STATE.model;
 }
 
@@ -84,11 +85,20 @@ function renderPairs() {
     const item = document.createElement("li");
     if (pair.index === STATE.index) item.classList.add("active");
     const label = document.createElement("span");
+    label.className = "name";
     label.textContent = pair.instance_id;
     const right = document.createElement("span");
-    right.className = "query";
-    right.textContent = pair.hard ? "HARD" : pair.query;
-    if (pair.hard) right.classList.add("hard");
+    right.className = "meta-right";
+    if (pair.hard) {
+      const badge = document.createElement("span");
+      badge.className = "badge hard";
+      badge.textContent = "hard";
+      right.append(badge);
+    }
+    const query = document.createElement("span");
+    query.className = "query";
+    query.textContent = pair.query;
+    right.append(query);
     item.append(label, right);
     item.addEventListener("click", () => selectPair(pair.index));
     list.append(item);
@@ -106,6 +116,7 @@ async function loadDump(refresh = false) {
   if (STATE.index === null || !STATE.model) return;
   const meta = el("meta");
   meta.textContent = "running matcher…";
+  el("viewer").classList.add("busy");
   try {
     const dump = await api("/api/pair", {
       index: STATE.index,
@@ -114,6 +125,7 @@ async function loadDump(refresh = false) {
     });
     STATE.dump = dump;
     renderMeta();
+    el("viewer").classList.remove("busy");
     draw();
   } catch (error) {
     meta.textContent = `error: ${error.message}`;
@@ -245,7 +257,7 @@ function draw() {
     dot.addEventListener("mouseenter", (event) => showTooltip(event, match));
     dot.addEventListener("mousemove", (event) => moveTooltip(event));
     dot.addEventListener("mouseleave", hideTooltip);
-    dot.addEventListener("click", () => highlight(match, position));
+    dot.addEventListener("click", () => focusMatch(match));
     pointLayer.append(dot);
     if (position % labelEvery === 0) {
       const label = svgEl("text", {
@@ -326,14 +338,19 @@ function drawOcclusion(root, heat, x, y, width, height) {
   root.append(layer);
 }
 
-function highlight(match, position) {
-  const text = `#${match.ref}↔#${match.query} · (${formatNumber(match.x0, 1)}, ${formatNumber(
-    match.y0,
-    1,
-  )}) → (${formatNumber(match.x1, 1)}, ${formatNumber(match.y1, 1)}) · residual ${formatNumber(
-    match.residual,
-  )} px`;
-  el("meta").dataset.pinned = text;
+// Clicking a point pins its numbers into the meta bar so they can be read
+// without holding the pointer still over a moving element.
+function focusMatch(match) {
+  const pinned = el("meta").querySelector(".pinned");
+  if (pinned) pinned.remove();
+  const chip = document.createElement("span");
+  chip.className = "pinned";
+  chip.innerHTML =
+    `pinned <b>#${match.ref} → #${match.query}</b>` +
+    ` · (${formatNumber(match.x0, 1)}, ${formatNumber(match.y0, 1)}) → ` +
+    `(${formatNumber(match.x1, 1)}, ${formatNumber(match.y1, 1)})` +
+    ` · residual ${formatNumber(match.residual)} px`;
+  el("meta").append(chip);
 }
 
 function showTooltip(event, match) {
@@ -414,15 +431,38 @@ async function runOcclusion() {
   }
 }
 
+function persist(id, value) {
+  localStorage.setItem(`ui:${id}`, value);
+}
+
+function restorePersisted() {
+  for (const id of ["links", "residuals", "density", "hard-only", "line-width"]) {
+    const saved = localStorage.getItem(`ui:${id}`);
+    const node = el(id);
+    if (!node || saved === null) continue;
+    if (node.type === "checkbox") node.checked = saved === "1";
+    else node.value = saved;
+  }
+  STATE.lineWidth = Number(el("line-width").value);
+}
+
 function wireEvents() {
+  restorePersisted();
   el("model").addEventListener("change", (event) => {
     STATE.model = event.target.value;
+    persist("model", STATE.model);
     loadDump();
   });
   el("search").addEventListener("input", () => loadPairs());
-  el("hard-only").addEventListener("change", () => loadPairs());
+  el("hard-only").addEventListener("change", () => {
+    persist("hard-only", el("hard-only").checked ? "1" : "0");
+    loadPairs();
+  });
   for (const id of ["links", "residuals", "density"]) {
-    el(id).addEventListener("change", () => draw());
+    el(id).addEventListener("change", () => {
+      persist(id, el(id).checked ? "1" : "0");
+      draw();
+    });
   }
   el("occlusion").addEventListener("click", () => runOcclusion());
   el("tab-inspector").addEventListener("click", () => showView("inspector"));
@@ -436,7 +476,7 @@ function wireEvents() {
   width.value = String(STATE.lineWidth);
   width.addEventListener("input", (event) => {
     STATE.lineWidth = Number(event.target.value);
-    localStorage.setItem("lineWidth", String(STATE.lineWidth));
+    persist("line-width", event.target.value);
     draw();
   });
   window.addEventListener("resize", () => draw());
@@ -464,9 +504,27 @@ function wireHelp() {
     button.setAttribute("aria-expanded", String(open));
   });
   document.addEventListener("keydown", (event) => {
+    const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(
+      document.activeElement?.tagName ?? ""
+    );
     if (event.key === "Escape") {
       wrap.classList.remove("open");
       button.setAttribute("aria-expanded", "false");
+      return;
+    }
+    if (typing) return;
+    if (event.key === "?") {
+      wrap.classList.toggle("open");
+      button.setAttribute("aria-expanded", String(wrap.classList.contains("open")));
+      return;
+    }
+    const layers = { l: "links", r: "residuals", d: "density" };
+    const layer = layers[event.key.toLowerCase()];
+    if (layer) {
+      const node = el(layer);
+      node.checked = !node.checked;
+      persist(layer, node.checked ? "1" : "0");
+      draw();
     }
   });
 }
@@ -635,6 +693,7 @@ async function submitAblation(event) {
 
 async function boot() {
   try {
+    restorePersisted();
     await loadModels();
     await loadPairs();
     wireEvents();

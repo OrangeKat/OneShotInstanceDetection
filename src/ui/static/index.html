@@ -7,168 +7,212 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <span class="dot"></span>
-        <strong>Pair inspector</strong>
-        <nav class="tabs">
-          <button id="tab-inspector" class="tab active" type="button">Inspector</button>
-          <button id="tab-ablations" class="tab" type="button">Ablations</button>
-        </nav>
+    <header class="appbar">
+      <div class="appbar-brand">
+        <span class="logo-dot"></span>
+        <span class="app-name">Pair inspector</span>
       </div>
-      <div class="controls">
-        <label class="field">
-          <span>Model</span>
-          <select id="model"></select>
-        </label>
-        <label class="field grow">
-          <span>Search</span>
-          <input id="search" type="search" placeholder="instance or query file" />
-        </label>
-        <label class="toggle">
-          <input id="hard-only" type="checkbox" />
-          <span>Hard pairs only</span>
-        </label>
-        <label class="toggle">
-          <input id="links" type="checkbox" checked />
-          <span>Links</span>
-        </label>
-        <label class="toggle">
-          <input id="residuals" type="checkbox" checked />
-          <span>Residuals</span>
-        </label>
-        <label class="toggle">
-          <input id="density" type="checkbox" />
-          <span>Density</span>
-        </label>
-        <label class="field range">
-          <span>Line width</span>
-          <input id="line-width" type="range" min="0.5" max="6" step="0.5" value="2" />
-        </label>
-        <button id="occlusion" class="button">Occlusion</button>
-        <div class="help">
-          <button
-            id="help-button"
-            class="help-button"
-            type="button"
-            aria-label="What the controls do"
-            aria-expanded="false"
-          >
-            ?
-          </button>
-          <div id="help-panel" class="help-panel" role="tooltip">
-            <p class="help-title">What the controls do</p>
-            <dl>
-              <dt>Model</dt>
-              <dd>
-                Which matcher answers for this pair. Switching re-runs it live,
-                so the same image shows how a sparse, dense, or classical
-                matcher differs.
-              </dd>
-              <dt>Search</dt>
-              <dd>Filters the pair list by instance or query filename.</dd>
-              <dt>Hard pairs only</dt>
-              <dd>
-                Pairs that no benchmarked model solves. Start here: if every
-                matcher misses the same pair, the problem is the pair, not the
-                matcher.
-              </dd>
-              <dt>Links</dt>
-              <dd>
-                Draws the correspondences returned before RANSAC, reference to
-                query. This is the matcher's raw answer, not the filtered one.
-              </dd>
-              <dt>Residuals</dt>
-              <dd>
-                Dashed arrow from each matched query point to where the
-                estimated homography says its reference point should land. Long
-                arrows are matches the geometry rejects; the arrow length is the
-                model's own error.
-              </dd>
-              <dt>Density</dt>
-              <dd>
-                Occupancy of the matched points on each image. A flat map means
-                matches are spread over texture; a hot spot means the matcher
-                locked onto one region.
-              </dd>
-              <dt>Line width</dt>
-              <dd>
-                Thickness of links and residual arrows. Raise it when a pair has
-                many correspondences and the lines disappear into the image.
-              </dd>
-              <dt>Occlusion</dt>
-              <dd>
-                Greys out each cell of the reference in turn and re-runs the
-                matcher. Cells that matter are the ones where matches vanish, so
-                this shows which part of the reference the result actually
-                depends on. Slow: one matcher run per cell.
-              </dd>
-              <dt>Point labels</dt>
-              <dd>
-                Each query point is tagged with the reference keypoint index it
-                matched, so a correspondence traces back to a source pixel.
-              </dd>
-              <dt>Colours</dt>
-              <dd>
-                <span class="chip" style="background:#35c07a"></span> inlier
-                <span class="chip" style="background:#ef6b6b"></span> outlier
-                <span class="chip" style="background:#f0a94a"></span> residual
-              </dd>
-              <dt>Ablations tab</dt>
-              <dd>
-                Runs one factor at a time (keypoints, RANSAC threshold, input
-                size, ratio) across a values list and shows each finished run
-                beside a baseline with deltas. Jobs run serially in the
-                background; each writes its config and git commit next to its
-                results.
-              </dd>
-              <dt>Mouse</dt>
-              <dd>Wheel zooms, drag pans, hover shows the exact coordinates.</dd>
-            </dl>
-          </div>
+
+      <nav class="tabs" role="tablist" aria-label="Views">
+        <button id="tab-inspector" class="tab active" type="button" role="tab">
+          Inspector
+        </button>
+        <button id="tab-ablations" class="tab" type="button" role="tab">
+          Ablations
+        </button>
+      </nav>
+
+      <div class="spacer"></div>
+
+      <div class="help">
+        <button
+          id="help-button"
+          class="icon-btn"
+          type="button"
+          aria-label="What the controls do"
+          aria-expanded="false"
+        >
+          ?
+        </button>
+        <div id="help-panel" class="help-panel" role="tooltip">
+          <p class="panel-title">What the controls do</p>
+          <dl>
+            <dt>Model</dt>
+            <dd>
+              Which matcher answers for this pair. Switching re-runs it live, so
+              the same image shows how a sparse, dense, or classical matcher
+              differs.
+            </dd>
+            <dt>Search</dt>
+            <dd>Filters the pair list by instance or query filename.</dd>
+            <dt>Hard pairs only</dt>
+            <dd>
+              Pairs that no benchmarked model solves. Start here: if every
+              matcher misses the same pair, the problem is the pair, not the
+              matcher.
+            </dd>
+            <dt>Layers</dt>
+            <dd>
+              <b>Links</b> draws the correspondences returned before RANSAC,
+              reference to query — the matcher's raw answer. <b>Residuals</b>
+              adds a dashed arrow from each matched point to where the
+              homography puts it; arrow length is the model's own geometric
+              error. <b>Density</b> shades where matches concentrate on each
+              image.
+            </dd>
+            <dt>Line width</dt>
+            <dd>
+              Thickness of links and residual arrows. Raise it when a pair has
+              many correspondences and the lines disappear into the image.
+            </dd>
+            <dt>Occlusion</dt>
+            <dd>
+              Greys out each cell of the reference in turn and re-runs the
+              matcher. Cells where matches vanish are the ones the result
+              depends on. Slow: one matcher run per cell.
+            </dd>
+            <dt>Point labels</dt>
+            <dd>
+              Each query point is tagged with the reference keypoint index it
+              matched, so a correspondence traces back to a source pixel.
+            </dd>
+            <dt>Colours</dt>
+            <dd>
+              <span class="swatch ok"></span> inlier
+              <span class="swatch bad"></span> outlier
+              <span class="swatch warn"></span> residual
+            </dd>
+            <dt>Ablations tab</dt>
+            <dd>
+              Runs one factor at a time (keypoints, RANSAC threshold, input
+              size, ratio) across a values list and shows each finished run
+              beside a baseline with deltas. Jobs run serially in the
+              background; each writes its config and git commit next to its
+              results.
+            </dd>
+            <dt>Keys</dt>
+            <dd>
+              <kbd>?</kbd> opens this panel, <kbd>Esc</kbd> closes it,
+              <kbd>L</kbd> <kbd>R</kbd> <kbd>D</kbd> toggle layers, and the
+              wheel zooms while drag pans.
+            </dd>
+          </dl>
         </div>
       </div>
     </header>
 
-    <main class="layout" id="view-inspector">
+    <main class="workspace" id="view-inspector">
       <aside class="sidebar">
-        <div id="counts" class="counts"></div>
+        <div class="sidebar-head">
+          <div class="search">
+            <input
+              id="search"
+              type="search"
+              placeholder="Search instance or query"
+              aria-label="Search pairs"
+            />
+          </div>
+          <div class="sidebar-row">
+            <span id="counts" class="counts"></span>
+            <label class="chip">
+              <input id="hard-only" type="checkbox" />
+              <span>Hard only</span>
+            </label>
+          </div>
+        </div>
         <ul id="pair-list" class="pair-list"></ul>
       </aside>
 
       <section class="stage" id="stage-inspector">
-        <div id="meta" class="meta"></div>
-        <div id="viewer" class="viewer">
-          <p class="hint">Pick a pair on the left.</p>
+        <div class="toolbar">
+          <label class="field">
+            <span>Model</span>
+            <select id="model"></select>
+          </label>
+
+          <div class="field">
+            <span>Layers</span>
+            <div class="seg" role="group" aria-label="Layers">
+              <label class="chip">
+                <input id="links" type="checkbox" checked />
+                <span>Links</span>
+              </label>
+              <label class="chip">
+                <input id="residuals" type="checkbox" checked />
+                <span>Residuals</span>
+              </label>
+              <label class="chip">
+                <input id="density" type="checkbox" />
+                <span>Density</span>
+              </label>
+            </div>
+          </div>
+
+          <label class="field range">
+            <span>Line width</span>
+            <input
+              id="line-width"
+              type="range"
+              min="0.5"
+              max="6"
+              step="0.5"
+              value="2"
+            />
+          </label>
+
+          <div class="spacer"></div>
+          <button id="occlusion" class="btn ghost" type="button">Occlusion</button>
         </div>
+
+        <div id="meta" class="metabar"></div>
+
+        <div id="viewer" class="viewer">
+          <p class="empty">Pick a pair on the left.</p>
+        </div>
+
         <div id="tooltip" class="tooltip" hidden></div>
       </section>
     </main>
 
     <main class="ablations" id="view-ablations" hidden>
-      <form class="runner" id="ablation-form">
-        <label class="field">
-          <span>Factor</span>
-          <select id="ablation-factor"></select>
-        </label>
-        <label class="field grow">
-          <span>Values</span>
-          <input id="ablation-values" type="text" placeholder="512 1024 2048" />
-        </label>
-        <label class="field">
-          <span>Model</span>
-          <select id="ablation-model"></select>
-        </label>
-        <label class="field">
-          <span>Max samples</span>
-          <input id="ablation-samples" type="number" min="1" placeholder="all" />
-        </label>
-        <button class="button" type="submit">Run ablation</button>
-        <span id="ablation-status" class="muted"></span>
+      <form class="panel runner" id="ablation-form">
+        <div class="panel-title">New ablation</div>
+        <div class="runner-fields">
+          <label class="field">
+            <span>Factor</span>
+            <select id="ablation-factor"></select>
+          </label>
+          <label class="field grow">
+            <span>Values</span>
+            <input
+              id="ablation-values"
+              type="text"
+              placeholder="512 1024 2048"
+            />
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <select id="ablation-model"></select>
+          </label>
+          <label class="field">
+            <span>Max samples</span>
+            <input
+              id="ablation-samples"
+              type="number"
+              min="1"
+              placeholder="all"
+            />
+          </label>
+          <button class="btn" type="submit">Run ablation</button>
+        </div>
+        <p id="ablation-status" class="hint"></p>
       </form>
 
       <section class="panel">
-        <h2>Jobs <span class="muted" id="job-hint"></span></h2>
+        <div class="panel-head">
+          <h2>Jobs</h2>
+          <span class="muted" id="job-hint"></span>
+        </div>
         <table class="grid" id="job-table">
           <thead>
             <tr>
@@ -183,13 +227,13 @@
       </section>
 
       <section class="panel">
-        <h2>
-          Runs
+        <div class="panel-head">
+          <h2>Runs</h2>
           <span class="muted">
             delta against the baseline row · compare runs with the same sample
             count
           </span>
-        </h2>
+        </div>
         <div class="filters">
           <label class="field">
             <span>Model</span>
@@ -199,7 +243,9 @@
             <span>Dataset</span>
             <select id="run-dataset"></select>
           </label>
-          <button class="button ghost" id="refresh-runs" type="button">Refresh</button>
+          <button class="btn ghost" id="refresh-runs" type="button">
+            Refresh
+          </button>
         </div>
         <table class="grid" id="run-table">
           <thead>
