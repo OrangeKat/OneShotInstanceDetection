@@ -43,6 +43,79 @@
           <input id="line-width" type="range" min="0.5" max="6" step="0.5" value="2" />
         </label>
         <button id="occlusion" class="button">Occlusion</button>
+        <div class="help">
+          <button
+            id="help-button"
+            class="help-button"
+            type="button"
+            aria-label="What the controls do"
+            aria-expanded="false"
+          >
+            ?
+          </button>
+          <div id="help-panel" class="help-panel" role="tooltip">
+            <p class="help-title">What the controls do</p>
+            <dl>
+              <dt>Model</dt>
+              <dd>
+                Which matcher answers for this pair. Switching re-runs it live,
+                so the same image shows how a sparse, dense, or classical
+                matcher differs.
+              </dd>
+              <dt>Search</dt>
+              <dd>Filters the pair list by instance or query filename.</dd>
+              <dt>Hard pairs only</dt>
+              <dd>
+                Pairs that no benchmarked model solves. Start here: if every
+                matcher misses the same pair, the problem is the pair, not the
+                matcher.
+              </dd>
+              <dt>Links</dt>
+              <dd>
+                Draws the correspondences returned before RANSAC, reference to
+                query. This is the matcher's raw answer, not the filtered one.
+              </dd>
+              <dt>Residuals</dt>
+              <dd>
+                Dashed arrow from each matched query point to where the
+                estimated homography says its reference point should land. Long
+                arrows are matches the geometry rejects; the arrow length is the
+                model's own error.
+              </dd>
+              <dt>Density</dt>
+              <dd>
+                Occupancy of the matched points on each image. A flat map means
+                matches are spread over texture; a hot spot means the matcher
+                locked onto one region.
+              </dd>
+              <dt>Line width</dt>
+              <dd>
+                Thickness of links and residual arrows. Raise it when a pair has
+                many correspondences and the lines disappear into the image.
+              </dd>
+              <dt>Occlusion</dt>
+              <dd>
+                Greys out each cell of the reference in turn and re-runs the
+                matcher. Cells that matter are the ones where matches vanish, so
+                this shows which part of the reference the result actually
+                depends on. Slow: one matcher run per cell.
+              </dd>
+              <dt>Point labels</dt>
+              <dd>
+                Each query point is tagged with the reference keypoint index it
+                matched, so a correspondence traces back to a source pixel.
+              </dd>
+              <dt>Colours</dt>
+              <dd>
+                <span class="chip" style="background:#35c07a"></span> inlier
+                <span class="chip" style="background:#ef6b6b"></span> outlier
+                <span class="chip" style="background:#f0a94a"></span> residual
+              </dd>
+              <dt>Mouse</dt>
+              <dd>Wheel zooms, drag pans, hover shows the exact coordinates.</dd>
+            </dl>
+          </div>
+        </div>
       </div>
     </header>
 

@@ -414,6 +414,7 @@ function wireEvents() {
     el(id).addEventListener("change", () => draw());
   }
   el("occlusion").addEventListener("click", () => runOcclusion());
+  wireHelp();
   const width = el("line-width");
   width.value = String(STATE.lineWidth);
   width.addEventListener("input", (event) => {
@@ -422,6 +423,35 @@ function wireEvents() {
     draw();
   });
   window.addEventListener("resize", () => draw());
+}
+
+function wireHelp() {
+  const wrap = document.querySelector(".help");
+  const button = el("help-button");
+  const hints = {
+    model: "Switch matcher without changing the pair.",
+    search: "Filter pairs by instance or query file name.",
+    "hard-only": "Show only pairs that no model solves.",
+    links: "Draw the pre-RANSAC correspondences.",
+    residuals: "Show each match's error against the homography.",
+    density: "Overlay where matches concentrate on each image.",
+    "line-width": "Thickness of links and residual arrows.",
+    occlusion: "Find which reference regions the matches depend on.",
+  };
+  for (const [id, text] of Object.entries(hints)) {
+    const node = el(id);
+    if (node) node.title = text;
+  }
+  button.addEventListener("click", () => {
+    const open = wrap.classList.toggle("open");
+    button.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      wrap.classList.remove("open");
+      button.setAttribute("aria-expanded", "false");
+    }
+  });
 }
 
 async function boot() {
