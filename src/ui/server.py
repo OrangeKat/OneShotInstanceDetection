@@ -32,6 +32,7 @@ from src.ui.references import (
     SELECTION_PATH,
     candidates_for,
     crop_bytes,
+    is_selectable,
     load_selection,
     save_selection,
     selection_for,
@@ -65,6 +66,7 @@ class DatasetContext:
     dataset: InstanceDataset
     entries: list[PairEntry]
     hard_keys: set[tuple[str, str]]
+    selectable: bool = False
 
     @property
     def data_dir(self) -> Path:
@@ -122,6 +124,7 @@ class InspectorState:
                 dataset=dataset,
                 entries=list_pairs(dataset, keys),
                 hard_keys=keys,
+                selectable=is_selectable(dataset, manifest.parent),
             )
         self.models = tuple(models)
         self.max_keypoints = max_keypoints
@@ -175,6 +178,7 @@ class InspectorState:
                 "name": context.name,
                 "pairs": len(context.entries),
                 "hard": len(context.hard_keys),
+                "selectable": context.selectable,
                 "manifest": str(context.manifest),
             }
             for context in self.contexts.values()
@@ -289,6 +293,13 @@ class InspectorState:
             Instances with selection state.
         """
         context = self.context(dataset_name)
+        if not context.selectable:
+            return {
+                "dataset": context.name,
+                "selectable": False,
+                "instances": [],
+                "statuses": list(_statuses()),
+            }
         instances: dict[str, dict[str, object]] = {}
         for sample in context.dataset.samples:
             name = sample.instance_id
@@ -309,6 +320,7 @@ class InspectorState:
                 instances[entry.instance_id]["pairs"] += 1
         return {
             "dataset": context.name,
+            "selectable": True,
             "instances": sorted(instances.values(), key=lambda item: item["instance"]),
             "statuses": list(_statuses()),
         }

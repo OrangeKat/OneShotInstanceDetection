@@ -24,6 +24,7 @@ __all__ = [
     "SELECTION_PATH",
     "candidates_for",
     "crop_bytes",
+    "is_selectable",
     "load_selection",
     "save_selection",
     "selection_for",
@@ -141,6 +142,37 @@ def _image_size(path: Path) -> tuple[int, int]:
         return (0, 0)
     height, width = image.shape[:2]
     return (width, height)
+
+
+def is_selectable(
+    dataset: InstanceDataset,
+    data_dir: Path,
+    *,
+    probe: int = 5,
+) -> bool:
+    """Report whether a dataset offers a choice of reference crops.
+
+    A dataset where every instance has a single reference cannot be reviewed
+    as a picker, so it is left out of the References view.
+
+    Args:
+        dataset: Manifest-backed dataset.
+        data_dir: Dataset root directory.
+        probe: Instances to inspect before deciding.
+
+    Returns:
+        True when at least one probed instance has more than one candidate.
+    """
+    seen: set[str] = set()
+    for sample in dataset.samples:
+        if sample.instance_id in seen:
+            continue
+        seen.add(sample.instance_id)
+        if len(candidates_for(dataset, sample.instance_id, data_dir)) > 1:
+            return True
+        if len(seen) >= probe:
+            break
+    return False
 
 
 def crop_bytes(candidate: Candidate, *, height: int = 132) -> bytes:

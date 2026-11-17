@@ -722,7 +722,9 @@ async function loadDatasets() {
   for (const dataset of payload.datasets) {
     const option = document.createElement("option");
     option.value = dataset.name;
-    option.textContent = `${dataset.name} · ${dataset.pairs} pairs`;
+    option.textContent =
+      `${dataset.name} · ${dataset.pairs} pairs` +
+      (dataset.selectable ? "" : " · single reference");
     select.append(option);
   }
   const saved = localStorage.getItem("ui:dataset");
@@ -736,6 +738,23 @@ async function loadReferences() {
   const payload = await api("/api/references", { dataset: STATE.dataset });
   REFS.instances = payload.instances;
   REFS.statuses = payload.statuses;
+  REFS.selectable = payload.selectable;
+  if (!payload.selectable) {
+    REFS.current = null;
+    el("ref-counts").textContent = "single reference per instance";
+    el("ref-status").textContent = "";
+    el("ref-title").textContent = `${payload.dataset}: nothing to choose`;
+    el("ref-subtitle").textContent =
+      "every instance has exactly one reference, so it is not shown here";
+    el("cand-grid").innerHTML =
+      '<p class="empty">This dataset has one reference per instance, so there are no alternatives to pick from. Use the Inspector tab to look at them.</p>';
+    el("ref-form").hidden = true;
+    el("ref-help").hidden = true;
+    el("ref-list").innerHTML = "";
+    return;
+  }
+  el("ref-form").hidden = false;
+  el("ref-help").hidden = false;
   el("ref-counts").textContent = `${payload.instances.length} instances`;
   const flagged = payload.instances.filter((item) => item.status !== "ok").length;
   el("ref-status").textContent = flagged ? `${flagged} flagged` : "all ok";

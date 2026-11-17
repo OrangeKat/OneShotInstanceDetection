@@ -201,10 +201,10 @@ offered as an alternative with its crop preview; choosing one writes
 make data-flickr ARGS="--skip-download --references configs/references.json"
 ```
 
-rebuilds the manifest around the choice. RPC exposes one crop per category, so
-the tab records a review flag (`ok`, `low-res`, `occluded`, `wrong-content`,
-`unusable`) instead of an alternative. Flags and choices are versioned, so a
-review survives a re-clone.
+rebuilds the manifest around the choice. Datasets with a single reference per
+instance, such as RPC, are left out of the picker: there is nothing to choose,
+and the Inspector tab already shows those crops. Choices and their notes are
+versioned in `configs/references.json`, so a review survives a re-clone.
 
 Runs are cached under `outputs/ui/`, so revisiting a pair is instant. The UI is
 read-only: it never writes to `outputs/*/results.json` and holds no experiment
