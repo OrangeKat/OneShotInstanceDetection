@@ -167,12 +167,33 @@ Useful commands:
 ```bash
 make analyze          # failure analysis, diagnostics, stage/slice tables
 make diagnose MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle"
+make ui               # pair inspector at http://127.0.0.1:8765
 make compare          # model × dataset matrix
 make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
 make figures          # regenerate the devlog figures
 ```
 
 RANSAC is seeded with `--seed`; small run-to-run variation remains expected.
+
+### Pair inspector
+
+`make ui` serves a local page over a manifest: pick a pair, pick a matcher, and
+see what the matcher returned **before RANSAC**. Every query point is linked to
+the reference keypoint it matched and labelled with that reference index, so a
+correspondence can be read back to the exact source pixel. The view also draws
+the residual against the estimated homography (where the reference point would
+land if the geometry held) and can overlay keypoint density or an occlusion
+sweep that shows which reference regions the matches depend on.
+
+```bash
+make ui                                        # FlickrLogos-32, all models
+make ui ARGS="--models sift roma --port 8800"  # one model, other port
+uv run python main.py ui --hard-csv outputs/rpc/analysis/hard_pairs.csv
+```
+
+Runs are cached under `outputs/ui/`, so revisiting a pair is instant. The UI is
+read-only: it never writes to `outputs/*/results.json` and holds no experiment
+state.
 
 ## Repository layout
 
@@ -182,6 +203,7 @@ RANSAC is seeded with `--seed`; small run-to-run variation remains expected.
 | `src/pipeline.py` | Box and HPatches protocols; model registry |
 | `src/models/feature_matching/` | Matcher implementations and vendored code |
 | `src/analysis/` | Failure analysis, slices, plots, and reports |
+| `src/ui/` | Local pair inspector: correspondences, residuals, response maps |
 | `src/validation/` | HPatches metrics and reports |
 | `src/utils/` | Manifest dataset, diagnostics, seeding, logging |
 | `scripts/` | Dataset preparation, analysis, sweeps, figures |

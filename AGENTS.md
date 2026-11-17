@@ -41,6 +41,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `src/models/feature_matching/roma/_vendor/` | vendored RoMa inference code (MIT) |
 | `src/models/feature_matching/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
 | `src/analysis/` | failure-analysis data, metrics, plots, tables, report |
+| `src/ui/` | local pair inspector served by `main.py ui` |
 | `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
 | `src/utils/dataset.py` | manifest-backed reference/query dataset |
 | `src/utils/logger.py` | stderr logger |
@@ -131,6 +132,7 @@ Run every dataset whose data is present with
 ```bash
 make examples
 make analyze
+make ui ARGS="--models sift roma"    # pair inspector, http://127.0.0.1:8765
 make diagnose MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle"
 make compare
 make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
@@ -159,7 +161,9 @@ make hpatches MODELS="roma"
 5. Update README/devnotes results if the change is user-visible.
 
 Use the shared helpers in `base.py`: `ratio_test`, `estimate_homography`,
-`keypoint_points`, `limit_keypoints`, and `to_gray`.
+`keypoint_points`, `limit_keypoints`, and `to_gray`. If the matcher exposes a
+per-match confidence, set `MatchResult.scores` aligned with `matches`; the
+inspector renders it when present.
 
 ## Style
 

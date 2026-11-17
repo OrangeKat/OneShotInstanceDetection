@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pair inspector</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot"></span>
+        <strong>Pair inspector</strong>
+        <span id="pair-summary" class="muted"></span>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Model</span>
+          <select id="model"></select>
+        </label>
+        <label class="field grow">
+          <span>Search</span>
+          <input id="search" type="search" placeholder="instance or query file" />
+        </label>
+        <label class="toggle">
+          <input id="hard-only" type="checkbox" />
+          <span>Hard pairs only</span>
+        </label>
+        <label class="toggle">
+          <input id="links" type="checkbox" checked />
+          <span>Links</span>
+        </label>
+        <label class="toggle">
+          <input id="residuals" type="checkbox" checked />
+          <span>Residuals</span>
+        </label>
+        <label class="toggle">
+          <input id="density" type="checkbox" />
+          <span>Density</span>
+        </label>
+        <button id="occlusion" class="button">Occlusion</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div id="counts" class="counts"></div>
+        <ul id="pair-list" class="pair-list"></ul>
+      </aside>
+
+      <section class="stage">
+        <div id="meta" class="meta"></div>
+        <div id="viewer" class="viewer">
+          <p class="hint">Pick a pair on the left.</p>
+        </div>
+        <div id="tooltip" class="tooltip" hidden></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

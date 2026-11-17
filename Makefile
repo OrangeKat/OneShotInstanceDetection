@@ -102,6 +102,9 @@ analyze: ## Generate failure-analysis plots and report
 		--results $(ANALYZE_RESULTS) \
 		--output $(ANALYZE_OUTPUT) $(ARGS)
 
+ui: ## Serve the pair inspector (ARGS="--port 8765 --models sift roma")
+	$(PYTHON) main.py ui $(ARGS)
+
 diagnose: ## Diagnose one pair (MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle")
 	$(PYTHON) scripts/diagnose.py --model $(MODEL) --index $(INDEX) $(ARGS)
 
