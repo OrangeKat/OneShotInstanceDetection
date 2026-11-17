@@ -26,6 +26,12 @@
   box-sizing: border-box;
 }
 
+/* The views set their own display value, which would otherwise beat the
+   browser default for [hidden]. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -402,7 +408,7 @@ input:hover {
   min-height: 0;
 }
 
-.pair-list:empty::after {
+#pair-list:empty::after {
   content: "No pairs match this filter.";
   display: block;
   padding: 18px 14px;
@@ -777,6 +783,19 @@ input:hover {
   padding: 16px;
   overflow-y: auto;
   min-height: 0;
+}
+
+.cand-grid .empty {
+  grid-column: 1 / -1;
+  padding: 18px 4px;
+}
+
+.references.single {
+  grid-template-columns: 1fr;
+}
+
+.references.single .ref-side {
+  display: none;
 }
 
 .cand-grid {

@@ -13,6 +13,7 @@ const STATE = {
   lineWidth: Number(localStorage.getItem("lineWidth") || 2),
   dataset: null,
   datasets: [],
+  labels: localStorage.getItem("ui:labels") !== "0",
 };
 
 const REFS = { instances: [], current: null, candidates: [], chosen: null, statuses: [] };
@@ -217,12 +218,29 @@ function draw() {
     drawOcclusion(root, STATE.occlusion, 0, offsetY, refW, refH);
   }
 
-  const linkLayer = svgEl("g", { opacity: 0.45 });
+  const linkOpacity = Math.min(0.45, Math.max(0.1, 30 / Math.max(1, dump.matches.length)));
+  const linkLayer = svgEl("g", { opacity: linkOpacity });
   const pointLayer = svgEl("g");
   const residualLayer = svgEl("g", { "stroke-dasharray": "3 3" });
   root.append(linkLayer, residualLayer, pointLayer);
 
-  const labelEvery = Math.max(1, Math.ceil(dump.matches.length / 80));
+  const labelBudget = 60;
+  const placed = [];
+  const labelled = new Set();
+  const byScore = [...dump.matches.keys()].sort(
+    (a, b) => (dump.matches[b].score ?? 0) - (dump.matches[a].score ?? 0),
+  );
+  for (const position of byScore) {
+    if (labelled.size >= labelBudget) break;
+    const [, y] = toQuery(dump.matches[position]);
+    const [, x] = toQuery(dump.matches[position]);
+    const crowded = placed.some(
+      ([px, py]) => Math.abs(px - x) < 34 && Math.abs(py - y) < 15,
+    );
+    if (crowded) continue;
+    placed.push([x, y]);
+    labelled.add(position);
+  }
   dump.matches.forEach((match, position) => {
     const [x0, y0] = toRef(match);
     const [x1, y1] = toQuery(match);
@@ -266,7 +284,7 @@ function draw() {
     dot.addEventListener("mouseleave", hideTooltip);
     dot.addEventListener("click", () => focusMatch(match));
     pointLayer.append(dot);
-    if (position % labelEvery === 0) {
+    if (STATE.labels && labelled.has(position)) {
       const label = svgEl("text", {
         x: x1 + 5,
         y: y1 - 4,
@@ -444,7 +462,14 @@ function persist(id, value) {
 }
 
 function restorePersisted() {
-  for (const id of ["links", "residuals", "density", "hard-only", "line-width"]) {
+  for (const id of [
+    "links",
+    "residuals",
+    "density",
+    "labels",
+    "hard-only",
+    "line-width",
+  ]) {
     const saved = localStorage.getItem(`ui:${id}`);
     const node = el(id);
     if (!node || saved === null) continue;
@@ -452,6 +477,7 @@ function restorePersisted() {
     else node.value = saved;
   }
   STATE.lineWidth = Number(el("line-width").value);
+  STATE.labels = el("labels").checked;
 }
 
 function wireEvents() {
@@ -466,9 +492,10 @@ function wireEvents() {
     persist("hard-only", el("hard-only").checked ? "1" : "0");
     loadPairs();
   });
-  for (const id of ["links", "residuals", "density"]) {
+  for (const id of ["links", "residuals", "density", "labels"]) {
     el(id).addEventListener("change", () => {
       persist(id, el(id).checked ? "1" : "0");
+      if (id === "labels") STATE.labels = el(id).checked;
       draw();
     });
   }
@@ -508,6 +535,7 @@ function wireHelp() {
     search: "Filter pairs by instance or query file name.",
     "hard-only": "Show only pairs that no model solves.",
     links: "Draw the pre-RANSAC correspondences.",
+    labels: "Tag the strongest query points with their reference index.",
     residuals: "Show each match's error against the homography.",
     density: "Overlay where matches concentrate on each image.",
     "line-width": "Thickness of links and residual arrows.",
@@ -536,7 +564,7 @@ function wireHelp() {
       button.setAttribute("aria-expanded", String(wrap.classList.contains("open")));
       return;
     }
-    const layers = { l: "links", r: "residuals", d: "density" };
+    const layers = { l: "links", r: "residuals", d: "density", n: "labels" };
     const layer = layers[event.key.toLowerCase()];
     if (layer) {
       const node = el(layer);
@@ -545,6 +573,20 @@ function wireHelp() {
       draw();
     }
   });
+}
+
+function initialRoute() {
+  const params = new URLSearchParams(window.location.search);
+  const hash = (window.location.hash || "").replace("#", "");
+  const views = ["inspector", "references", "ablations"];
+  return {
+    view: views.includes(hash) ? hash : "inspector",
+    help: params.get("help") === "1",
+    dataset: params.get("dataset"),
+    model: params.get("model"),
+    pair: params.get("pair"),
+    instance: params.get("instance"),
+  };
 }
 
 function showView(view) {
@@ -557,6 +599,9 @@ function showView(view) {
     node.hidden = name !== view;
     el(`tab-${name}`).classList.toggle("active", name === view);
   }
+  if (window.location.hash !== `#${view}`) {
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${view}`);
+  }
   if (view === "ablations") loadAblations();
   if (view === "references") loadReferences();
 }
@@ -566,11 +611,13 @@ function metric(run, model) {
 }
 
 function baselineRun(rows) {
-  return (
-    rows.find((run) =>
-      Object.entries(DEFAULTS).every(([key, value]) => Number(run.config[key]) === Number(value))
-    ) ?? rows[rows.length - 1]
+  const defaults = rows.filter((run) =>
+    Object.entries(DEFAULTS).every(([key, value]) => Number(run.config[key]) === Number(value))
   );
+  const pool = defaults.length ? defaults : rows;
+  return [...pool].sort(
+    (a, b) => Number(b.config.samples ?? 0) - Number(a.config.samples ?? 0)
+  )[0];
 }
 
 async function loadAblations() {
@@ -739,6 +786,9 @@ async function loadReferences() {
   REFS.instances = payload.instances;
   REFS.statuses = payload.statuses;
   REFS.selectable = payload.selectable;
+  document
+    .querySelector(".references")
+    ?.classList.toggle("single", !payload.selectable);
   if (!payload.selectable) {
     REFS.current = null;
     el("ref-counts").textContent = "single reference per instance";
@@ -834,6 +884,11 @@ function renderCandidates() {
       badge.className = "badge quiet";
       badge.textContent = "in use";
       meta.append(" ", badge);
+    } else if (REFS.chosen?.image === candidate.image) {
+      const badge = document.createElement("span");
+      badge.className = "badge hard";
+      badge.textContent = "saved";
+      meta.append(" ", badge);
     }
     card.append(img, meta);
     card.addEventListener("click", () => {
@@ -876,13 +931,44 @@ async function saveReference() {
 async function boot() {
   try {
     restorePersisted();
+    const route = initialRoute();
     await loadModels();
     await loadDatasets();
-    await loadPairs();
-    wireEvents();
-    if (STATE.pairs.length) {
-      await selectPair(STATE.pairs[0].index);
+    if (route.dataset && STATE.datasets.some((item) => item.name === route.dataset)) {
+      STATE.dataset = route.dataset;
+      el("dataset").value = STATE.dataset;
     }
+    if (route.model && STATE.models.includes(route.model)) {
+      STATE.model = route.model;
+      el("model").value = STATE.model;
+    }
+    wireEvents();
+    showView(route.view);
+    if (route.help) {
+      document.querySelector(".help")?.classList.add("open");
+      el("help-button")?.setAttribute("aria-expanded", "true");
+    }
+    if (route.view === "inspector") {
+      await loadPairs();
+      if (STATE.pairs.length) {
+        const match = route.pair
+          ? STATE.pairs.find((pair) => String(pair.index) === route.pair)
+          : null;
+        await selectPair(match ? match.index : STATE.pairs[0].index);
+      }
+      return;
+    }
+    if (route.view === "references") {
+      await loadReferences();
+      const instance = route.instance;
+      if (instance && REFS.instances.some((item) => item.instance === instance)) {
+        await selectInstance(instance);
+      } else if (REFS.instances.length) {
+        await selectInstance(REFS.instances[0].instance);
+      }
+      return;
+    }
+    await loadAblations();
   } catch (error) {
     el("meta").textContent = `startup failed: ${error.message}`;
   }
