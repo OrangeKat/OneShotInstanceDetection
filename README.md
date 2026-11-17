@@ -210,7 +210,9 @@ make check-refs
 
 It compares `configs/references.json` against the manifest and exits non-zero
 while any choice is still pending, so a stale manifest cannot be mistaken for a
-new one. Datasets with a single reference per
+new one. The inspector rereads a manifest that changed on disk and drops its
+cached dumps, so a rebuild shows up on the next request; **Reload data** forces
+the same thing by hand. Datasets with a single reference per
 instance, such as RPC, are left out of the picker: there is nothing to choose,
 and the Inspector tab already shows those crops. Choices and their notes are
 versioned in `configs/references.json`, so a review survives a re-clone.

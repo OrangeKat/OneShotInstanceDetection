@@ -67,6 +67,7 @@ class DatasetContext:
     entries: list[PairEntry]
     hard_keys: set[tuple[str, str]]
     selectable: bool = False
+    mtime: float = 0.0
 
     @property
     def data_dir(self) -> Path:
@@ -114,18 +115,11 @@ class InspectorState:
             runs_root: Directory scanned for completed benchmark runs.
             selection_path: Reference selection JSON.
         """
+        self.manifests = dict(manifests)
+        self.hard_csv = {name: list(paths) for name, paths in hard_csv.items()}
         self.contexts: dict[str, DatasetContext] = {}
-        for name, manifest in manifests.items():
-            dataset = InstanceDataset(manifest, load_images=False)
-            keys = hard_pair_keys(hard_csv.get(name, ()))
-            self.contexts[name] = DatasetContext(
-                name=name,
-                manifest=manifest,
-                dataset=dataset,
-                entries=list_pairs(dataset, keys),
-                hard_keys=keys,
-                selectable=is_selectable(dataset, manifest.parent),
-            )
+        for name in self.manifests:
+            self.contexts[name] = self._build_context(name)
         self.models = tuple(models)
         self.max_keypoints = max_keypoints
         self.ransac_threshold = ransac_threshold
@@ -142,6 +136,45 @@ class InspectorState:
         self.jobs = JobQueue(self.repo_root, self.contexts[default].manifest)
 
     # ------------------------------------------------------------- datasets
+    def _build_context(self, name: str) -> DatasetContext:
+        """Parse one manifest into a context.
+
+        Args:
+            name: Dataset key.
+
+        Returns:
+            A fresh context for that dataset.
+        """
+        manifest = self.manifests[name]
+        dataset = InstanceDataset(manifest, load_images=False)
+        keys = hard_pair_keys(self.hard_csv.get(name, ()))
+        return DatasetContext(
+            name=name,
+            manifest=manifest,
+            dataset=dataset,
+            entries=list_pairs(dataset, keys),
+            hard_keys=keys,
+            selectable=is_selectable(dataset, manifest.parent),
+            mtime=manifest.stat().st_mtime,
+        )
+
+    def reload(self, name: str | None = None) -> None:
+        """Reparse manifests that changed on disk and drop stale dumps.
+
+        The reference crops live in the manifest, so a rebuild on disk has no
+        effect until the server rereads it.
+
+        Args:
+            name: Dataset to reload, or ``None`` for every dataset.
+        """
+        targets = [name] if name else list(self.manifests)
+        for target in targets:
+            if target not in self.manifests:
+                continue
+            self.contexts[target] = self._build_context(target)
+            for key in [key for key in self._dumps if key[0] == target]:
+                del self._dumps[key]
+
     def dataset_names(self) -> list[str]:
         """Return the available dataset keys.
 
@@ -165,7 +198,15 @@ class InspectorState:
         key = name or next(iter(self.contexts))
         if key not in self.contexts:
             raise KeyError(f"unknown dataset: {key}")
-        return self.contexts[key]
+        context = self.contexts[key]
+        try:
+            changed = context.manifest.stat().st_mtime != context.mtime
+        except OSError:
+            changed = False
+        if changed:
+            self.reload(key)
+            return self.contexts[key]
+        return context
 
     def datasets(self) -> list[dict[str, object]]:
         """Summarize every dataset for the client.
@@ -244,6 +285,7 @@ class InspectorState:
                 index=index,
             )
         payload["dataset"] = context.name
+        payload["revision"] = context.mtime
         self._dumps[key] = payload
         cache_path(self.cache_dir, model, index).write_text(json.dumps(payload))
         return payload
@@ -550,6 +592,9 @@ class InspectorHandler(BaseHTTPRequestHandler):
             payload = self._body()
             if parsed.path == "/api/ablation/run":
                 self._send_json(self.state.submit_ablation(payload))
+            elif parsed.path == "/api/reload":
+                self.state.reload()
+                self._send_json({"datasets": self.state.datasets()})
             elif parsed.path == "/api/references":
                 self._send_json(self.state.choose_reference(payload))
             else:
@@ -583,6 +628,9 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 self._occlusion(query)
             elif parsed.path == "/api/ablations":
                 self._send_json(self.state.ablations())
+            elif parsed.path == "/api/reload":
+                self.state.reload()
+                self._send_json({"datasets": self.state.datasets()})
             elif parsed.path == "/api/references":
                 self._send_json(self.state.references(_first(query, "dataset")))
             elif parsed.path == "/api/reference/candidates":

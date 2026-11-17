@@ -355,6 +355,11 @@ input:hover {
   border: 1px solid var(--border);
 }
 
+.btn.small {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
 .btn.ghost:hover {
   color: var(--text);
   border-color: var(--accent);

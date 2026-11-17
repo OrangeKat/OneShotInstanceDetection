@@ -201,8 +201,9 @@ function draw() {
     root.append(node);
   };
   const dataset = encodeURIComponent(STATE.dataset ?? "");
-  image(`/img/reference?index=${dump.index}&dataset=${dataset}`, 0, offsetY, refW, refH);
-  image(`/img/query?index=${dump.index}&dataset=${dataset}`, queryX, offsetY, queryW, queryH);
+  const revision = dump.revision ?? 0;
+  image(`/img/reference?index=${dump.index}&dataset=${dataset}&rev=${revision}`, 0, offsetY, refW, refH);
+  image(`/img/query?index=${dump.index}&dataset=${dataset}&rev=${revision}`, queryX, offsetY, queryW, queryH);
 
   const toRef = (match) => [match.x0 * refScale, match.y0 * refScale + offsetY];
   const toQuery = (match) => [
@@ -512,6 +513,7 @@ function wireEvents() {
     if (STATE.pairs.length) await selectPair(STATE.pairs[0].index);
   });
   el("ref-save").addEventListener("click", saveReference);
+  el("reload").addEventListener("click", reloadData);
   el("ablation-form").addEventListener("submit", submitAblation);
   el("refresh-runs").addEventListener("click", () => loadAblations());
   el("run-model").addEventListener("change", () => renderRuns());
@@ -759,6 +761,28 @@ async function submitAblation(event) {
     status.textContent = `failed: ${error.message}`;
   }
   return false;
+}
+
+async function reloadData() {
+  const button = el("reload");
+  button.disabled = true;
+  button.textContent = "reloading…";
+  try {
+    const response = await fetch("/api/reload", { method: "POST" });
+    if (!response.ok) throw new Error(response.statusText);
+    STATE.dump = null;
+    STATE.occlusion = null;
+    await loadDatasets();
+    await loadPairs();
+    if (STATE.index !== null) await loadDump(true);
+    if (!el("view-references").hidden) await loadReferences();
+    el("reload").textContent = "Reload data";
+  } catch (error) {
+    el("reload").textContent = "Reload data";
+    el("meta").textContent = `reload failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadDatasets() {
