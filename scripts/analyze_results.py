@@ -43,9 +43,8 @@ from src.analysis.plots import (
     plot_pr_curves,
 )
 from src.analysis.report import render_report
-from src.analysis.separability import separability_rows
 from src.analysis.slices import slice_metrics, stage_counts
-from src.analysis.tables import write_csv, write_failure_csv, wrong_box_anatomy
+from src.analysis.tables import write_csv, write_failure_csv
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -142,14 +141,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     pairs = pair_outcomes(rows, models)
     write_csv(args.output / "pair_agreement.csv", pairs)
     write_csv(args.output / "hard_pairs.csv", hard_pair_rows(pairs, models))
-    write_csv(
-        args.output / "verifier_separability.csv",
-        separability_rows(rows, models),
-    )
-    write_csv(
-        args.output / "wrong_box_anatomy.csv",
-        wrong_box_anatomy(rows, models, threshold),
-    )
     summary = agreement_summary(pairs, models)
     plot_agreement_counts(
         summary["distribution"],

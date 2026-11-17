@@ -22,8 +22,7 @@ from src.analysis.data import (
     Row,
 )
 from src.analysis.metrics import binned_hit_rates, failure_counts
-from src.analysis.separability import best_separability, separability_rows
-from src.analysis.tables import _class_table, _observations, wrong_box_anatomy
+from src.analysis.tables import _class_table, _observations
 
 
 def render_report(
@@ -198,56 +197,6 @@ def render_report(
             lines.append(f"Plus {len(hard) - 10} more; see `hard_pairs.csv`.")
     else:
         lines.append("Every positive pair is solved by at least one model.")
-
-    anatomy = wrong_box_anatomy(rows, models, threshold)
-    lines.extend(
-        [
-            "",
-            "## Wrong-box anatomy",
-            "",
-            "Misaligned means IoU between 0.1 and the hit threshold: the instance "
-            "was found, the box is wrong. Wrong region means IoU below 0.1: a "
-            "different object or the background.",
-            "",
-            "| Model | Predictions | Wrong boxes | Misaligned | Wrong region "
-            "| Misaligned share |",
-            "|---|---:|---:|---:|---:|---:|",
-        ]
-    )
-    for record in anatomy:
-        lines.append(
-            f"| {record['model']} | {record['predicted']} "
-            f"| {record['wrong_boxes']} | {record['misaligned']} "
-            f"| {record['wrong_region']} "
-            f"| {float(record['misaligned_share']):.3f} |"
-        )
-
-    separability = separability_rows(rows, models)
-    best = best_separability(separability)
-    lines.extend(
-        [
-            "",
-            "## Verifier separability",
-            "",
-            "ROC AUC of each recorded matcher signal as a rejection score. "
-            "`positive_vs_negative` asks whether the signal separates real pairs "
-            "from queries with no instance; `hit_vs_miss_positives` asks whether "
-            "it separates correct from incorrect localizations. 0.5 is chance, "
-            "so this is the headroom a verifier could use without retraining "
-            "the matcher.",
-            "",
-            "| Model | Positive vs negative | Hit vs miss | Best score |",
-            "|---|---:|---:|---|",
-        ]
-    )
-    for model in models:
-        model_best = best.get(model, {})
-        pn = model_best.get("positive_vs_negative")
-        hm = model_best.get("hit_vs_miss_positives")
-        pn_text = f"{float(pn['auc']):.3f}" if pn else "n/a"
-        hm_text = f"{float(hm['auc']):.3f}" if hm else "n/a"
-        name = f"{pn['score']}" if pn else "n/a"
-        lines.append(f"| {model} | {pn_text} | {hm_text} | {name} |")
 
     lines.extend(
         [
