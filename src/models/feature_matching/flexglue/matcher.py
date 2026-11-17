@@ -94,6 +94,8 @@ class FlexGlueMatcher(FeatureMatcher):
         if len(matches) > self.max_keypoints:
             keep = np.argsort(scores)[::-1][: self.max_keypoints]
             matches = matches[keep]
+            scores = scores[keep]
+        scores = tuple(float(value) for value in scores)
         pairs = tuple((int(first), int(second)) for first, second in matches)
         points0 = keypoints0[[first for first, _ in pairs]].astype(np.float32)
         points1 = keypoints1[[second for _, second in pairs]].astype(np.float32)
@@ -106,6 +108,7 @@ class FlexGlueMatcher(FeatureMatcher):
             keypoints0=keypoints0,
             keypoints1=keypoints1,
             matches=pairs,
+            scores=scores,
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(pairs),

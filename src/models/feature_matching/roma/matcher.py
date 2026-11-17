@@ -73,11 +73,12 @@ class RoMaMatcher(FeatureMatcher):
         image0 = Image.fromarray(reference)
         image1 = Image.fromarray(query)
         warp, certainty = self._model.match(image0, image1)
-        matches, _ = self._model.sample(
+        matches, sampled_certainty = self._model.sample(
             warp,
             certainty,
             num=self.max_keypoints,
         )
+        scores = tuple(float(value) for value in sampled_certainty.flatten().tolist())
         matches = matches.detach().cpu().numpy()
         if len(matches) == 0:
             empty = np.zeros((0, 2), dtype=np.float32)
@@ -105,6 +106,7 @@ class RoMaMatcher(FeatureMatcher):
             keypoints0=keypoints0,
             keypoints1=keypoints1,
             matches=pairs,
+            scores=scores,
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(pairs),

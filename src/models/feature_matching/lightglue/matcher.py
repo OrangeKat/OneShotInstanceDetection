@@ -85,6 +85,11 @@ class LightGlueFeatureMatcher(FeatureMatcher):
             keypoints0 = features0["keypoints"][0].detach().cpu().numpy()
             keypoints1 = features1["keypoints"][0].detach().cpu().numpy()
             matched = output["matches"][0].detach().cpu().numpy()
+            raw_scores = (
+                output["scores"][0].detach().cpu().numpy()
+                if "scores" in output
+                else None
+            )
 
         pairs = tuple((int(index0), int(index1)) for index0, index1 in matched)
         if not pairs:
@@ -97,10 +102,16 @@ class LightGlueFeatureMatcher(FeatureMatcher):
             target,
             self.ransac_threshold,
         )
+        scores = (
+            tuple(float(value) for value in raw_scores)
+            if raw_scores is not None and len(raw_scores) == len(pairs)
+            else ()
+        )
         return MatchResult(
             keypoints0=keypoints0,
             keypoints1=keypoints1,
             matches=pairs,
+            scores=scores,
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(pairs),

@@ -94,6 +94,7 @@ class LoFTRMatcher(FeatureMatcher):
         points0 = keypoints0[indices].astype(np.float32)
         points1 = keypoints1[indices].astype(np.float32)
         pairs = tuple((int(index), int(index)) for index in indices)
+        scores = tuple(float(value) for value in confidence[indices])
         homography, inlier_mask, inlier_count = estimate_homography(
             points0,
             points1,
@@ -103,6 +104,7 @@ class LoFTRMatcher(FeatureMatcher):
             keypoints0=keypoints0,
             keypoints1=keypoints1,
             matches=pairs,
+            scores=scores,
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(pairs),

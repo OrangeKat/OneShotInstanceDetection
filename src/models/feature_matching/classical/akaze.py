@@ -9,7 +9,7 @@ from src.models.feature_matching.base import (
     FeatureMatcher,
     MatchResult,
     limit_keypoints,
-    ratio_test,
+    ratio_test_scored,
     to_gray,
 )
 
@@ -66,8 +66,8 @@ class AKAZEMatcher(FeatureMatcher):
         if descriptors0 is None or descriptors1 is None:
             return self._result(keypoints0, keypoints1, ())
 
-        matches = ratio_test(
+        matches, scores = ratio_test_scored(
             self._matcher.knnMatch(descriptors0, descriptors1, k=2),
             self.ratio,
         )
-        return self._result(keypoints0, keypoints1, matches)
+        return self._result(keypoints0, keypoints1, matches, scores)

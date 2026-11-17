@@ -30,6 +30,8 @@ class MatchResult:
         matches: Matched index pairs after the ratio test.
         homography: Reference-to-query homography, or ``None``.
         inlier_mask: RANSAC inlier mask aligned with ``matches``.
+        scores: Per-match confidence aligned with ``matches``, empty when the
+            matcher does not expose one.
         match_count: Number of matches after the ratio test.
         inlier_count: Number of RANSAC inliers.
     """
@@ -37,6 +39,7 @@ class MatchResult:
     keypoints0: np.ndarray
     keypoints1: np.ndarray
     matches: tuple[tuple[int, int], ...] = ()
+    scores: tuple[float, ...] = ()
     homography: np.ndarray | None = None
     inlier_mask: np.ndarray | None = None
     match_count: int = 0
@@ -90,6 +93,7 @@ class FeatureMatcher(ABC):
         keypoints0: Sequence[cv2.KeyPoint],
         keypoints1: Sequence[cv2.KeyPoint],
         matches: tuple[tuple[int, int], ...],
+        scores: tuple[float, ...] = (),
     ) -> MatchResult:
         """Estimate a homography and package a match result.
 
@@ -97,6 +101,7 @@ class FeatureMatcher(ABC):
             keypoints0: Reference keypoints.
             keypoints1: Query keypoints.
             matches: Matched index pairs after the ratio test.
+            scores: Optional per-match confidence aligned with ``matches``.
 
         Returns:
             A populated match result.
@@ -117,6 +122,7 @@ class FeatureMatcher(ABC):
             keypoints0=points0,
             keypoints1=points1,
             matches=matches,
+            scores=scores,
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(matches),
@@ -186,14 +192,34 @@ def ratio_test(
     Returns:
         Matched ``(reference_index, query_index)`` pairs.
     """
+    pairs, _ = ratio_test_scored(knn_matches, ratio)
+    return pairs
+
+
+def ratio_test_scored(
+    knn_matches: Sequence[Sequence[cv2.DMatch]],
+    ratio: float,
+) -> tuple[tuple[tuple[int, int], ...], tuple[float, ...]]:
+    """Apply the ratio test and keep a confidence per surviving match.
+
+    Args:
+        knn_matches: Two-nearest-neighbour matches per reference descriptor.
+        ratio: Maximum distance ratio between the best and second best match.
+
+    Returns:
+        Matched pairs and their confidence, ``1 - d_best / d_second``, which
+        rises as the best candidate separates from the runner-up.
+    """
     pairs: list[tuple[int, int]] = []
+    scores: list[float] = []
     for candidates in knn_matches:
         if len(candidates) < 2:
             continue
         best, second = candidates[0], candidates[1]
         if best.distance < ratio * second.distance:
             pairs.append((best.queryIdx, best.trainIdx))
-    return tuple(pairs)
+            scores.append(1.0 - float(best.distance / max(second.distance, 1e-6)))
+    return tuple(pairs), tuple(scores)
 
 
 def estimate_homography(
