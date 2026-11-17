@@ -10,6 +10,7 @@ const STATE = {
   dump: null,
   view: { scale: 1, tx: 0, ty: 0 },
   occlusion: null,
+  lineWidth: Number(localStorage.getItem("lineWidth") || 2),
 };
 
 const el = (id) => document.getElementById(id);
@@ -186,7 +187,7 @@ function draw() {
     drawOcclusion(root, STATE.occlusion, 0, offsetY, refW, refH);
   }
 
-  const linkLayer = svgEl("g", { opacity: 0.35 });
+  const linkLayer = svgEl("g", { opacity: 0.45 });
   const pointLayer = svgEl("g");
   const residualLayer = svgEl("g", { "stroke-dasharray": "3 3" });
   root.append(linkLayer, residualLayer, pointLayer);
@@ -203,7 +204,7 @@ function draw() {
           x2: x1,
           y2: y1,
           stroke: match.inlier ? "#35c07a" : "#ef6b6b",
-          "stroke-width": 1,
+          "stroke-width": STATE.lineWidth,
         }),
       );
     }
@@ -217,7 +218,7 @@ function draw() {
             x2: projected[0],
             y2: projected[1],
             stroke: "#f0a94a",
-            "stroke-width": 1.2,
+            "stroke-width": STATE.lineWidth,
           }),
         );
       }
@@ -413,6 +414,13 @@ function wireEvents() {
     el(id).addEventListener("change", () => draw());
   }
   el("occlusion").addEventListener("click", () => runOcclusion());
+  const width = el("line-width");
+  width.value = String(STATE.lineWidth);
+  width.addEventListener("input", (event) => {
+    STATE.lineWidth = Number(event.target.value);
+    localStorage.setItem("lineWidth", String(STATE.lineWidth));
+    draw();
+  });
   window.addEventListener("resize", () => draw());
 }
 
