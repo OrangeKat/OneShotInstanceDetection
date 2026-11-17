@@ -417,8 +417,11 @@ def serve(
     )
     server = make_server(state, host=host, port=port)
     address, actual_port = server.server_address[:2]
-    print(f"inspector: http://{address}:{actual_port}")
-    print(f"pairs: {len(state.entries)} | hard: {len(state.hard_keys)}")
+    print(f"inspector: http://{address}:{actual_port}", flush=True)
+    print(
+        f"pairs: {len(state.entries)} | hard: {len(state.hard_keys)}",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
