@@ -201,7 +201,16 @@ offered as an alternative with its crop preview; choosing one writes
 make data-flickr ARGS="--skip-download --references configs/references.json"
 ```
 
-rebuilds the manifest around the choice. Datasets with a single reference per
+rebuilds the manifest around the choice. To check that a choice actually landed
+before running a benchmark:
+
+```bash
+make check-refs
+```
+
+It compares `configs/references.json` against the manifest and exits non-zero
+while any choice is still pending, so a stale manifest cannot be mistaken for a
+new one. Datasets with a single reference per
 instance, such as RPC, are left out of the picker: there is nothing to choose,
 and the Inspector tab already shows those crops. Choices and their notes are
 versioned in `configs/references.json`, so a review survives a re-clone.

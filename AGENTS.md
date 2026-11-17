@@ -135,6 +135,7 @@ make examples
 make analyze
 make ui ARGS="--models sift roma"    # inspector + reference picker, :8765
 make ui-smoke ARGS="--url http://127.0.0.1:8765"   # browser checks
+make check-refs                       # chosen crops vs manifest
 make diagnose MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle"
 make compare
 make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"

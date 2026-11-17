@@ -105,6 +105,9 @@ analyze: ## Generate failure-analysis plots and report
 ui: ## Serve the pair inspector (ARGS="--port 8765 --models sift roma")
 	$(PYTHON) main.py ui $(ARGS)
 
+check-refs: ## Verify chosen reference crops reached the manifest
+	$(PYTHON) scripts/check_references.py $(ARGS)
+
 ui-smoke: ## Browser-check the inspector against a running UI (ARGS="--url ...")
 	uv run --with playwright $(PYTHON) scripts/ui_smoke.py $(ARGS)
 

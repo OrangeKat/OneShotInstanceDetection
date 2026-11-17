@@ -144,12 +144,15 @@ def inspect_view(page: Page) -> None:
     check("model switch reloads the dump", "roma" in page.inner_text("#meta"))
 
 
-def references_view(page: Page, screenshots: Path) -> None:
-    """Exercise the reference picker without leaving state behind.
+def references_view(page: Page, screenshots: Path, *, allow_writes: bool) -> None:
+    """Exercise the reference picker.
+
+    Saving is opt-in because it writes the real selection file.
 
     Args:
         page: Page under test.
         screenshots: Screenshot directory.
+        allow_writes: Whether to click Save and restore the file afterwards.
     """
     selection = Path("configs/references.json")
     backup = selection.read_text() if selection.exists() else None
@@ -163,11 +166,13 @@ def references_view(page: Page, screenshots: Path) -> None:
     active = page.locator("#cand-grid .cand.active").count()
     check("clicking a crop selects it", active == 1)
 
+    if not allow_writes:
+        check("save skipped", True, "use --allow-writes to exercise it")
+        return
     page.click("#ref-save")
     page.wait_for_timeout(800)
     saved = page.inner_text("#ref-saved")
     check("save reports success", "saved" in saved.lower(), saved)
-
     if backup is not None:
         selection.write_text(backup)
     elif selection.exists():
@@ -255,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("outputs/ui/smoke"),
     )
     parser.add_argument("--skip-occlusion", action="store_true")
+    parser.add_argument(
+        "--allow-writes",
+        action="store_true",
+        help="Exercise Save, restoring configs/references.json afterwards.",
+    )
     args = parser.parse_args(argv)
     args.screenshots.mkdir(parents=True, exist_ok=True)
 
@@ -266,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         with browser_page(
             f"{args.url}/#references", args.screenshots, "references"
         ) as page:
-            references_view(page, args.screenshots)
+            references_view(page, args.screenshots, allow_writes=args.allow_writes)
         with browser_page(
             f"{args.url}/#ablations", args.screenshots, "ablations"
         ) as page:
