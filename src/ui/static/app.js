@@ -13,6 +13,17 @@ const STATE = {
   lineWidth: Number(localStorage.getItem("lineWidth") || 2),
 };
 
+const ABLATION = {
+  runs: [],
+  jobs: [],
+  factors: [],
+  filterModel: null,
+  filterDataset: null,
+  timer: null,
+};
+
+const DEFAULTS = { max_keypoints: 2048, ransac_threshold: 3, max_side: 640, ratio: 0.75 };
+
 const el = (id) => document.getElementById(id);
 
 function svgEl(name, attrs = {}) {
@@ -414,6 +425,12 @@ function wireEvents() {
     el(id).addEventListener("change", () => draw());
   }
   el("occlusion").addEventListener("click", () => runOcclusion());
+  el("tab-inspector").addEventListener("click", () => showView("inspector"));
+  el("tab-ablations").addEventListener("click", () => showView("ablations"));
+  el("ablation-form").addEventListener("submit", submitAblation);
+  el("refresh-runs").addEventListener("click", () => loadAblations());
+  el("run-model").addEventListener("change", () => renderRuns());
+  el("run-dataset").addEventListener("change", () => renderRuns());
   wireHelp();
   const width = el("line-width");
   width.value = String(STATE.lineWidth);
@@ -452,6 +469,168 @@ function wireHelp() {
       button.setAttribute("aria-expanded", "false");
     }
   });
+}
+
+function showView(view) {
+  const inspector = view === "inspector";
+  el("view-inspector").hidden = !inspector;
+  el("view-ablations").hidden = inspector;
+  el("tab-inspector").classList.toggle("active", inspector);
+  el("tab-ablations").classList.toggle("active", !inspector);
+  if (!inspector) loadAblations();
+}
+
+function metric(run, model) {
+  return run.metrics?.[model] ?? null;
+}
+
+function baselineRun(rows) {
+  return (
+    rows.find((run) =>
+      Object.entries(DEFAULTS).every(([key, value]) => Number(run.config[key]) === Number(value))
+    ) ?? rows[rows.length - 1]
+  );
+}
+
+async function loadAblations() {
+  const data = await api("/api/ablations");
+  ABLATION.runs = data.runs;
+  ABLATION.jobs = data.jobs;
+  ABLATION.factors = data.factors;
+  fillSelect(el("ablation-factor"), data.factors, el("ablation-factor").value);
+  fillSelect(el("ablation-model"), data.models, el("ablation-model").value || STATE.model);
+  const datasets = [...new Set(data.runs.map((run) => run.dataset))].sort();
+  fillSelect(el("run-dataset"), datasets, ABLATION.filterDataset || datasets[0]);
+  const models = [...new Set(data.runs.flatMap((run) => run.models))].sort();
+  fillSelect(el("run-model"), models, ABLATION.filterModel || STATE.model || models[0]);
+  renderJobs();
+  renderRuns();
+  schedulePoll();
+}
+
+function fillSelect(select, values, current) {
+  const previous = current || select.value;
+  select.innerHTML = "";
+  for (const value of values) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.append(option);
+  }
+  if (previous && values.includes(previous)) select.value = previous;
+}
+
+function renderJobs() {
+  const body = el("job-table").querySelector("tbody");
+  body.innerHTML = "";
+  const active = ABLATION.jobs.filter((job) => ["queued", "running"].includes(job.status));
+  el("job-hint").textContent = active.length
+    ? `${active.length} pending · one run at a time`
+    : ABLATION.jobs.length
+      ? "idle"
+      : "no jobs yet";
+  for (const job of [...ABLATION.jobs].reverse()) {
+    const row = document.createElement("tr");
+    const status = document.createElement("span");
+    status.className = `status ${job.status}`;
+    status.textContent = job.status;
+    row.innerHTML = `<td>${job.label}</td><td></td><td class="mono">${job.output}</td><td></td>`;
+    row.children[1].append(status);
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "log";
+    const pre = document.createElement("pre");
+    pre.textContent = job.log || "(empty)";
+    details.append(summary, pre);
+    row.children[3].append(details);
+    body.append(row);
+  }
+}
+
+function renderRuns() {
+  const model = el("run-model").value;
+  const dataset = el("run-dataset").value;
+  ABLATION.filterModel = model;
+  ABLATION.filterDataset = dataset;
+  const rows = ABLATION.runs.filter(
+    (run) => run.models.includes(model) && run.dataset === dataset
+  );
+  const body = el("run-table").querySelector("tbody");
+  body.innerHTML = "";
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="12" class="muted">no runs recorded for this selection</td></tr>';
+    return;
+  }
+  const base = baselineRun(rows);
+  const baseMetrics = metric(base, model);
+  for (const run of rows) {
+    const values = metric(run, model);
+    if (!values) continue;
+    const hit = Number(values.hit_rate ?? NaN);
+    const ap = Number(values.ap50 ?? NaN);
+    const deltaHit = hit - Number(baseMetrics?.hit_rate ?? NaN);
+    const deltaAp = ap - Number(baseMetrics?.ap50 ?? NaN);
+    const tr = document.createElement("tr");
+    if (run === base) tr.classList.add("baseline");
+    tr.innerHTML = `
+      <td class="mono">${run.run_id}${run === base ? " · baseline" : ""}</td>
+      <td>${run.config.max_keypoints ?? "—"}</td>
+      <td>${run.config.ransac_threshold ?? "—"}</td>
+      <td>${run.config.max_side ?? "—"}</td>
+      <td>${run.config.ratio ?? "—"}</td>
+      <td>${run.config.samples ?? "—"}</td>
+      <td>${formatNumber(hit, 3)}</td>
+      <td>${formatNumber(ap, 3)}</td>
+      <td>${formatNumber(values.mean_iou, 3)}</td>
+      <td>${formatNumber(values.p50, 0)} ms</td>
+      <td class="${deltaClass(deltaHit)}">${signed(deltaHit)}</td>
+      <td class="${deltaClass(deltaAp)}">${signed(deltaAp)}</td>`;
+    body.append(tr);
+  }
+}
+
+function deltaClass(value) {
+  if (!Number.isFinite(value) || Math.abs(value) < 1e-6) return "muted";
+  return value > 0 ? "up" : "down";
+}
+
+function signed(value) {
+  if (!Number.isFinite(value)) return "—";
+  const text = value.toFixed(3);
+  return value > 0 ? `+${text}` : text;
+}
+
+function schedulePoll() {
+  clearTimeout(ABLATION.timer);
+  const active = ABLATION.jobs.some((job) => ["queued", "running"].includes(job.status));
+  if (!active) return;
+  ABLATION.timer = setTimeout(() => loadAblations(), 2500);
+}
+
+async function submitAblation(event) {
+  event.preventDefault();
+  const status = el("ablation-status");
+  status.textContent = "queueing…";
+  try {
+    const payload = {
+      factor: el("ablation-factor").value,
+      values: el("ablation-values").value,
+      models: [el("ablation-model").value],
+      max_samples: el("ablation-samples").value || null,
+    };
+    const response = await fetch("/api/ablation/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || response.statusText);
+    status.textContent = `${body.jobs.length} run(s) queued`;
+    await loadAblations();
+  } catch (error) {
+    status.textContent = `failed: ${error.message}`;
+  }
+  return false;
 }
 
 async function boot() {

@@ -11,7 +11,10 @@
       <div class="brand">
         <span class="dot"></span>
         <strong>Pair inspector</strong>
-        <span id="pair-summary" class="muted"></span>
+        <nav class="tabs">
+          <button id="tab-inspector" class="tab active" type="button">Inspector</button>
+          <button id="tab-ablations" class="tab" type="button">Ablations</button>
+        </nav>
       </div>
       <div class="controls">
         <label class="field">
@@ -111,6 +114,14 @@
                 <span class="chip" style="background:#ef6b6b"></span> outlier
                 <span class="chip" style="background:#f0a94a"></span> residual
               </dd>
+              <dt>Ablations tab</dt>
+              <dd>
+                Runs one factor at a time (keypoints, RANSAC threshold, input
+                size, ratio) across a values list and shows each finished run
+                beside a baseline with deltas. Jobs run serially in the
+                background; each writes its config and git commit next to its
+                results.
+              </dd>
               <dt>Mouse</dt>
               <dd>Wheel zooms, drag pans, hover shows the exact coordinates.</dd>
             </dl>
@@ -119,18 +130,96 @@
       </div>
     </header>
 
-    <main class="layout">
+    <main class="layout" id="view-inspector">
       <aside class="sidebar">
         <div id="counts" class="counts"></div>
         <ul id="pair-list" class="pair-list"></ul>
       </aside>
 
-      <section class="stage">
+      <section class="stage" id="stage-inspector">
         <div id="meta" class="meta"></div>
         <div id="viewer" class="viewer">
           <p class="hint">Pick a pair on the left.</p>
         </div>
         <div id="tooltip" class="tooltip" hidden></div>
+      </section>
+    </main>
+
+    <main class="ablations" id="view-ablations" hidden>
+      <form class="runner" id="ablation-form">
+        <label class="field">
+          <span>Factor</span>
+          <select id="ablation-factor"></select>
+        </label>
+        <label class="field grow">
+          <span>Values</span>
+          <input id="ablation-values" type="text" placeholder="512 1024 2048" />
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select id="ablation-model"></select>
+        </label>
+        <label class="field">
+          <span>Max samples</span>
+          <input id="ablation-samples" type="number" min="1" placeholder="all" />
+        </label>
+        <button class="button" type="submit">Run ablation</button>
+        <span id="ablation-status" class="muted"></span>
+      </form>
+
+      <section class="panel">
+        <h2>Jobs <span class="muted" id="job-hint"></span></h2>
+        <table class="grid" id="job-table">
+          <thead>
+            <tr>
+              <th>Job</th>
+              <th>Status</th>
+              <th>Output</th>
+              <th>Log</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>
+          Runs
+          <span class="muted">
+            delta against the baseline row · compare runs with the same sample
+            count
+          </span>
+        </h2>
+        <div class="filters">
+          <label class="field">
+            <span>Model</span>
+            <select id="run-model"></select>
+          </label>
+          <label class="field">
+            <span>Dataset</span>
+            <select id="run-dataset"></select>
+          </label>
+          <button class="button ghost" id="refresh-runs" type="button">Refresh</button>
+        </div>
+        <table class="grid" id="run-table">
+          <thead>
+            <tr>
+              <th>Run</th>
+              <th>KP</th>
+              <th>RANSAC</th>
+              <th>Side</th>
+              <th>Ratio</th>
+              <th>Samples</th>
+              <th>Hit</th>
+              <th>AP@0.5</th>
+              <th>IoU</th>
+              <th>p50</th>
+              <th>Δ hit</th>
+              <th>Δ AP</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </section>
     </main>
 

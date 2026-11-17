@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Sequence
+import time
+from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +16,15 @@ import numpy as np
 
 from src.models.feature_matching.base import FeatureMatcher
 from src.pipeline import MODELS
+from src.ui.ablations import (
+    ABLATION_FACTORS,
+    AblationJob,
+    JobQueue,
+    discover_runs,
+    expand_plan,
+    flatten_run,
+    format_value,
+)
 from src.ui.diagnostics import build_dump, cache_path, oci_heatmap
 from src.ui.pairs import filter_pairs, hard_pair_keys, list_pairs, sample_at
 from src.utils.dataset import InstanceDataset
@@ -50,6 +60,7 @@ class InspectorState:
         cache_dir: Path,
         max_keypoints: int = 2048,
         ransac_threshold: float = 3.0,
+        runs_root: Path | None = None,
     ) -> None:
         """Initialize the shared state.
 
@@ -60,6 +71,7 @@ class InspectorState:
             cache_dir: Directory for cached dumps.
             max_keypoints: Keypoint budget per image.
             ransac_threshold: RANSAC threshold in pixels.
+            runs_root: Directory scanned for completed benchmark runs.
         """
         self.dataset = InstanceDataset(manifest, load_images=False)
         self.hard_keys = hard_pair_keys(hard_csv)
@@ -69,6 +81,9 @@ class InspectorState:
         self.ransac_threshold = ransac_threshold
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.runs_root = runs_root or Path("outputs")
+        self.repo_root = Path(__file__).resolve().parents[2]
+        self.jobs = JobQueue(self.repo_root, manifest)
         self._matchers: dict[str, FeatureMatcher] = {}
         self._dumps: dict[tuple[int, str], dict[str, object]] = {}
         self._lock = threading.Lock()
@@ -126,6 +141,69 @@ class InspectorState:
         self._dumps[key] = payload
         cache_path(self.cache_dir, model, index).write_text(json.dumps(payload))
         return payload
+
+    def ablations(self) -> dict[str, object]:
+        """Return completed runs, queued jobs, and the supported factors.
+
+        Returns:
+            Payload for the ablation view.
+        """
+        runs = [flatten_run(record) for record in discover_runs(self.runs_root)]
+        return {
+            "runs": runs,
+            "jobs": self.jobs.snapshot(),
+            "factors": sorted(ABLATION_FACTORS),
+            "models": list(self.models),
+        }
+
+    def submit_ablation(self, payload: Mapping[str, object]) -> dict[str, object]:
+        """Expand one factor into runs and queue them.
+
+        Args:
+            payload: Request body with ``factor``, ``values``, and options.
+
+        Returns:
+            The queued job summaries.
+
+        Raises:
+            ValueError: If the request is malformed.
+        """
+        factor = str(payload.get("factor", ""))
+        raw_values = payload.get("values")
+        if isinstance(raw_values, str):
+            raw_values = [part for part in raw_values.replace(",", " ").split() if part]
+        if not isinstance(raw_values, list) or not raw_values:
+            raise ValueError("values must be a non-empty list")
+        if factor not in ABLATION_FACTORS:
+            raise ValueError(f"unknown factor: {factor}")
+        models = payload.get("models") or ["sift"]
+        if isinstance(models, str):
+            models = [models]
+        base: dict[str, object] = {
+            "models": [str(model) for model in models],
+            "max_samples": payload.get("max_samples"),
+            "max_keypoints": payload.get("max_keypoints", self.max_keypoints),
+            "ransac_threshold": payload.get("ransac_threshold", self.ransac_threshold),
+        }
+        plan = expand_plan(factor, [float(value) for value in raw_values], base)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        queued: list[dict[str, object]] = []
+        for entry in plan:
+            value = entry[factor]
+            label = f"{factor}={format_value(value)}"
+            output = (
+                Path("outputs")
+                / "ablations"
+                / f"{stamp}-{factor}-{format_value(value)}"
+            )
+            job = AblationJob(
+                job_id=f"{stamp}-{factor}-{format_value(value)}",
+                label=label,
+                config=entry,
+                output=output,
+            )
+            queued.append(self.jobs.submit(job).row())
+        return {"jobs": queued}
 
     def occlusion(self, index: int, model: str, grid: int) -> dict[str, object]:
         """Run the occlusion sweep for a pair and model.
@@ -213,6 +291,24 @@ class InspectorHandler(BaseHTTPRequestHandler):
         """Silence the default per-request logging."""
         return
 
+    def do_POST(self) -> None:  # noqa: N802
+        """Route a POST request."""
+        parsed = urlparse(self.path)
+        try:
+            if parsed.path == "/api/ablation/run":
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                self._send_json(self.state.submit_ablation(payload))
+            else:
+                self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+        except (ValueError, KeyError) as error:
+            self._send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+        except Exception as error:  # noqa: BLE001 - surface errors to the UI
+            self._send_json(
+                {"error": f"{type(error).__name__}: {error}"},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
     def do_GET(self) -> None:  # noqa: N802
         """Route a GET request."""
         parsed = urlparse(self.path)
@@ -228,6 +324,8 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 self._pairs(query)
             elif parsed.path == "/api/pair":
                 self._pair(query)
+            elif parsed.path == "/api/ablations":
+                self._send_json(self.state.ablations())
             elif parsed.path == "/api/occlusion":
                 self._occlusion(query)
             elif parsed.path in {"/img/reference", "/img/query"}:
@@ -393,6 +491,7 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8765,
     max_keypoints: int = 2048,
+    runs_root: Path | None = None,
 ) -> int:
     """Run the inspector until interrupted.
 
@@ -404,6 +503,7 @@ def serve(
         host: Bind address.
         port: Bind port.
         max_keypoints: Keypoint budget per image.
+        runs_root: Directory scanned for completed runs.
 
     Returns:
         Process exit code.
@@ -414,6 +514,7 @@ def serve(
         hard_csv=hard_csv,
         cache_dir=cache_dir,
         max_keypoints=max_keypoints,
+        runs_root=runs_root,
     )
     server = make_server(state, host=host, port=port)
     address, actual_port = server.server_address[:2]
