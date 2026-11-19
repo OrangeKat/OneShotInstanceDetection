@@ -201,6 +201,45 @@ def references_view(page: Page, screenshots: Path, *, allow_writes: bool) -> Non
         selection.unlink()
 
 
+def gradcam_view(page: Page) -> None:
+    """Check the Grad-CAM controls and the unavailable states.
+
+    Args:
+        page: Page under test.
+    """
+    page.wait_for_selector("#viewer svg circle", timeout=120_000)
+    layers = page.locator("#layer option").count()
+    check("Grad-CAM layers listed", layers > 1, f"{layers} layers")
+    enabled = not page.locator("#gradcam").is_disabled()
+    check("Grad-CAM enabled for extractor models", enabled)
+
+    if enabled:
+        page.click("#gradcam")
+        page.wait_for_function(
+            "() => !document.querySelector('#gradcam').disabled",
+            timeout=300_000,
+        )
+        failed = "failed" in page.inner_text("#meta").lower()
+        check("Grad-CAM computes a map", not failed)
+        page.select_option("#layer", "conv3b")
+        page.wait_for_function(
+            "() => !document.querySelector('#gradcam').disabled",
+            timeout=300_000,
+        )
+        check("Grad-CAM layer switch runs", True)
+
+    page.select_option("#model", "roma")
+    page.wait_for_function(
+        "() => document.querySelector('#meta').innerText.includes('roma')",
+        timeout=300_000,
+    )
+    check(
+        "dense matcher disables keypoints and Grad-CAM",
+        page.locator("#keypoints").is_disabled()
+        and page.locator("#gradcam").is_disabled(),
+    )
+
+
 def ablations_view(page: Page) -> None:
     """Exercise the ablation tab.
 
@@ -290,34 +329,37 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     args.screenshots.mkdir(parents=True, exist_ok=True)
 
-    try:
-        with browser_page(
-            f"{args.url}/?model=sift#inspector", args.screenshots, "inspector"
-        ) as page:
-            inspect_view(page)
-        with browser_page(
-            f"{args.url}/#references", args.screenshots, "references"
-        ) as page:
-            references_view(page, args.screenshots, allow_writes=args.allow_writes)
-        with browser_page(
-            f"{args.url}/#ablations", args.screenshots, "ablations"
-        ) as page:
-            ablations_view(page)
-        with browser_page(
-            f"{args.url}/?help=1#inspector", args.screenshots, "help"
-        ) as page:
-            help_panel(page)
-        with browser_page(
-            f"{args.url}/#inspector", args.screenshots, "datasets"
-        ) as page:
-            dataset_switch(page)
-        if not args.skip_response:
-            with browser_page(
-                f"{args.url}/?model=sift#inspector", args.screenshots, "response"
-            ) as page:
-                response(page)
-    except PlaywrightError as error:
-        check("page reached", False, str(error))
+    stages = [
+        (
+            "inspector",
+            f"{args.url}/?model=sift#inspector",
+            inspect_view,
+        ),
+        (
+            "references",
+            f"{args.url}/#references",
+            lambda page: references_view(
+                page, args.screenshots, allow_writes=args.allow_writes
+            ),
+        ),
+        (
+            "gradcam",
+            f"{args.url}/?model=superpoint_lightglue#inspector",
+            gradcam_view,
+        ),
+        ("ablations", f"{args.url}/#ablations", ablations_view),
+        ("help", f"{args.url}/?help=1#inspector", help_panel),
+        ("datasets", f"{args.url}/#inspector", dataset_switch),
+    ]
+    if not args.skip_response:
+        stages.append(("response", f"{args.url}/?model=sift#inspector", response))
+
+    for name, url, runner in stages:
+        try:
+            with browser_page(url, args.screenshots, name) as page:
+                runner(page)
+        except PlaywrightError as error:
+            check(f"{name} stage reached", False, str(error).splitlines()[0])
 
     failed = [item for item in CHECKS if not item[1]]
     print(f"\n{len(CHECKS) - len(failed)}/{len(CHECKS)} checks passed")

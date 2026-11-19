@@ -10,6 +10,7 @@ const STATE = {
   dump: null,
   view: { scale: 1, tx: 0, ty: 0 },
   response: null,
+  cam: null,
   lineWidth: Number(localStorage.getItem("lineWidth") || 2),
   dataset: null,
   datasets: [],
@@ -131,12 +132,24 @@ async function loadDump(refresh = false) {
       refresh: refresh ? 1 : 0,
     });
     STATE.dump = dump;
+    setKeypointsAvailable(dump.reference_keypoint_count > 0);
     renderMeta();
     el("viewer").classList.remove("busy");
     draw();
   } catch (error) {
     meta.textContent = `error: ${error.message}`;
   }
+}
+
+function setKeypointsAvailable(available) {
+  const chip = document.querySelector("label.chip:has(#keypoints)");
+  const topk = el("topk");
+  if (!chip) return;
+  chip.classList.toggle("disabled", !available);
+  chip.title = available ? "" : "this matcher detects no keypoints";
+  el("keypoints").disabled = !available;
+  topk.disabled = !available;
+  if (!available) el("keypoints").checked = false;
 }
 
 function renderMeta() {
@@ -222,6 +235,10 @@ function draw() {
   if (el("density").checked) {
     drawDensity(root, dump.reference_density, 0, offsetY, refW, refH);
     drawDensity(root, dump.query_density, queryX, offsetY, queryW, queryH);
+  }
+  if (STATE.cam) {
+    drawCam(root, STATE.cam.reference, 0, offsetY, refW, refH);
+    drawCam(root, STATE.cam.query, queryX, offsetY, queryW, queryH);
   }
   if (STATE.response) {
     drawResponse(root, STATE.response.reference, 0, offsetY, refW, refH);
@@ -374,6 +391,55 @@ function drawDensity(root, grid, x, y, width, height) {
   root.append(layer);
 }
 
+function drawCam(root, grid, x, y, width, height) {
+  const rows = grid?.length ?? 0;
+  if (!rows) return;
+  const columns = grid[0].length;
+  const layer = svgEl("g", { opacity: 0.55 });
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const value = Math.max(0, Math.min(1, grid[row][column]));
+      if (value < 0.06) continue;
+      layer.append(
+        svgEl("rect", {
+          x: x + (column / columns) * width,
+          y: y + (row / rows) * height,
+          width: width / columns + 0.5,
+          height: height / rows + 0.5,
+          fill: camColor(value),
+        }),
+      );
+    }
+  }
+  root.append(layer);
+}
+
+// Turbo-ish ramp: blue → cyan → green → yellow → red.
+function camColor(value) {
+  const stops = [
+    [0.0, [40, 60, 190]],
+    [0.25, [0, 170, 200]],
+    [0.5, [60, 200, 90]],
+    [0.75, [250, 210, 60]],
+    [1.0, [235, 55, 45]],
+  ];
+  let lower = stops[0];
+  let upper = stops[stops.length - 1];
+  for (let index = 0; index < stops.length - 1; index += 1) {
+    if (value >= stops[index][0] && value <= stops[index + 1][0]) {
+      lower = stops[index];
+      upper = stops[index + 1];
+      break;
+    }
+  }
+  const span = Math.max(upper[0] - lower[0], 1e-6);
+  const t = (value - lower[0]) / span;
+  const colour = lower[1].map((channel, index) =>
+    Math.round(channel + (upper[1][index] - channel) * t),
+  );
+  return `rgba(${colour[0]},${colour[1]},${colour[2]},${0.35 + 0.55 * value})`;
+}
+
 function drawResponse(root, heat, x, y, width, height) {
   const cells = heat?.cells ?? [];
   if (!cells.length) return;
@@ -483,6 +549,63 @@ function attachPanZoom(svg, root) {
   apply();
 }
 
+async function loadLayers() {
+  const select = el("layer");
+  const button = el("gradcam");
+  select.innerHTML = "";
+  button.disabled = true;
+  try {
+    const payload = await api("/api/layers", { model: STATE.model });
+    if (!payload.supported) {
+      const option = document.createElement("option");
+      option.textContent = "not available";
+      select.append(option);
+      button.title = "Grad-CAM needs a convolution backbone";
+      return;
+    }
+    for (const layer of payload.layers) {
+      const option = document.createElement("option");
+      option.value = layer.name;
+      option.textContent = `${layer.name} · ${layer.kind}`;
+      select.append(option);
+    }
+    select.value = payload.layers[payload.layers.length - 1].name;
+    button.disabled = false;
+    button.title = "Saliency of the selected layer";
+  } catch (error) {
+    button.title = `layers unavailable: ${error.message}`;
+  }
+}
+
+async function runGradcam() {
+  if (STATE.index === null) return;
+  const button = el("gradcam");
+  button.disabled = true;
+  const previous = button.textContent;
+  button.textContent = "running…";
+  el("meta").textContent = "computing Grad-CAM…";
+  try {
+    STATE.cam = await api("/api/gradcam", {
+      dataset: STATE.dataset,
+      index: STATE.index,
+      model: STATE.model,
+      layer: el("layer").value,
+    });
+    if (!STATE.cam.supported) {
+      el("meta").textContent = `${STATE.model}: Grad-CAM not available`;
+      STATE.cam = null;
+    } else {
+      renderMeta();
+    }
+    draw();
+  } catch (error) {
+    el("meta").textContent = `grad-cam failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
+}
+
 async function runResponse() {
   if (STATE.index === null) return;
   const button = el("response");
@@ -538,6 +661,9 @@ function wireEvents() {
   el("model").addEventListener("change", (event) => {
     STATE.model = event.target.value;
     persist("model", STATE.model);
+    STATE.cam = null;
+    STATE.response = null;
+    loadLayers();
     loadDump();
   });
   el("search").addEventListener("input", () => loadPairs());
@@ -553,6 +679,10 @@ function wireEvents() {
     });
   }
   el("response").addEventListener("click", () => runResponse());
+  el("gradcam").addEventListener("click", () => runGradcam());
+  el("layer").addEventListener("change", () => {
+    if (STATE.cam) runGradcam();
+  });
   el("tab-inspector").addEventListener("click", () => showView("inspector"));
   el("tab-references").addEventListener("click", () => showView("references"));
   el("tab-ablations").addEventListener("click", () => showView("ablations"));
@@ -596,6 +726,8 @@ function wireHelp() {
     topk: "How many keypoints per image to show.",
     "line-width": "Thickness of links and residual arrows.",
     response: "Show which image regions the matches depend on.",
+    layer: "Grad-CAM layer to visualise.",
+    gradcam: "Gradient saliency of the selected layer.",
   };
   for (const [id, text] of Object.entries(hints)) {
     const node = el(id);
@@ -832,6 +964,7 @@ async function reloadData() {
     if (!response.ok) throw new Error(response.statusText);
     STATE.dump = null;
     STATE.response = null;
+    STATE.cam = null;
     await loadDatasets();
     await loadPairs();
     if (STATE.index !== null) await loadDump(true);
@@ -1026,6 +1159,7 @@ async function boot() {
       STATE.model = route.model;
       el("model").value = STATE.model;
     }
+    await loadLayers();
     wireEvents();
     showView(route.view);
     if (route.help) {

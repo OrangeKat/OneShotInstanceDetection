@@ -74,7 +74,16 @@
               Thickness of links and residual arrows. Raise it when a pair has
               many correspondences and the lines disappear into the image.
             </dd>
-            <dt>Response</dt>
+            <dt>Grad-CAM</dt>
+            <dd>
+              Saliency of the extracted features, taken from the gradients of
+              the detector score with respect to a layer's feature map. The
+              layer selector picks the depth: early layers show low-level
+              response, late layers show what the detector actually fires on.
+              Available for the LightGlue extractors; the button stays disabled
+              for matchers without a convolution backbone.
+            </dd>
+            <dt>Occlusion</dt>
             <dd>
               Greys out each cell of the reference and of the query in turn and
               re-runs the matcher. Red cells are the ones whose removal costs
@@ -197,8 +206,14 @@
             />
           </label>
 
+          <label class="field">
+            <span>Grad-CAM layer</span>
+            <select id="layer"></select>
+          </label>
+
           <div class="spacer"></div>
-          <button id="response" class="btn ghost" type="button">Response</button>
+          <button id="gradcam" class="btn ghost" type="button">Grad-CAM</button>
+          <button id="response" class="btn ghost" type="button">Occlusion</button>
         </div>
 
         <div id="meta" class="metabar"></div>

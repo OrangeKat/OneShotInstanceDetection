@@ -312,6 +312,15 @@ input:hover {
   display: none;
 }
 
+.chip.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chip.disabled:hover {
+  color: var(--text-dim);
+}
+
 .chip:hover {
   color: var(--text);
 }

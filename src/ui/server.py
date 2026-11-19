@@ -26,6 +26,7 @@ from src.ui.ablations import (
     flatten_run,
     format_value,
 )
+from src.ui.cam import gradcam, list_layers
 from src.ui.diagnostics import build_dump, cache_path, response_heatmap
 from src.ui.pairs import PairEntry, filter_pairs, hard_pair_keys, list_pairs, sample_at
 from src.ui.references import (
@@ -132,6 +133,7 @@ class InspectorState:
         self._matchers: dict[str, FeatureMatcher] = {}
         self._dumps: dict[tuple[str, int, str], dict[str, object]] = {}
         self._responses: dict[tuple[str, int, str, int], dict[str, object]] = {}
+        self._cams: dict[tuple[str, int, str, str], dict[str, object]] = {}
         self._lock = threading.Lock()
         default = next(iter(self.contexts))
         self.jobs = JobQueue(self.repo_root, self.contexts[default].manifest)
@@ -177,6 +179,8 @@ class InspectorState:
                 del self._dumps[key]
             for key in [key for key in self._responses if key[0] == target]:
                 del self._responses[key]
+            for key in [key for key in self._cams if key[0] == target]:
+                del self._cams[key]
 
     def dataset_names(self) -> list[str]:
         """Return the available dataset keys.
@@ -291,6 +295,58 @@ class InspectorState:
         payload["revision"] = context.mtime
         self._dumps[key] = payload
         cache_path(self.cache_dir, model, index).write_text(json.dumps(payload))
+        return payload
+
+    def layers(self, model: str) -> dict[str, object]:
+        """Return the Grad-CAM hook points for a model.
+
+        Args:
+            model: Model name.
+
+        Returns:
+            Layer list and whether Grad-CAM is available.
+        """
+        layers = list_layers(self.matcher(model))
+        return {
+            "model": model,
+            "supported": bool(layers),
+            "layers": layers,
+        }
+
+    def gradcam(
+        self,
+        dataset_name: str | None,
+        index: int,
+        model: str,
+        layer: str | None,
+    ) -> dict[str, object]:
+        """Compute Grad-CAM maps for one pair, model, and layer.
+
+        Args:
+            dataset_name: Dataset key.
+            index: Manifest index.
+            model: Model name.
+            layer: Module name, or ``None`` for the deepest convolution.
+
+        Returns:
+            Maps for both images plus the layer that produced them.
+        """
+        context = self.context(dataset_name)
+        key = (context.name, index, model, layer or "")
+        cached = self._cams.get(key)
+        if cached is not None:
+            return cached
+        sample = context.dataset.load(sample_at(context.dataset, index))
+        with self._lock:
+            result = gradcam(
+                self.matcher(model),
+                context.dataset.reference_crop(sample),
+                _query_image(sample),
+                layer,
+            )
+        payload = {"supported": result is not None, **(result or {})}
+        if result is not None:
+            self._cams[key] = payload
         return payload
 
     def response(
@@ -644,6 +700,10 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 self._pairs(query)
             elif parsed.path == "/api/pair":
                 self._pair(query)
+            elif parsed.path == "/api/layers":
+                self._send_json(self.state.layers(_first(query, "model") or ""))
+            elif parsed.path == "/api/gradcam":
+                self._gradcam(query)
             elif parsed.path == "/api/response":
                 self._response(query)
             elif parsed.path == "/api/ablations":
@@ -733,6 +793,21 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 int(_first(query, "index", "0") or 0),
                 _first(query, "model") or self.state.models[0],
                 refresh=_first(query, "refresh") == "1",
+            )
+        )
+
+    def _gradcam(self, query: dict[str, list[str]]) -> None:
+        """Return Grad-CAM maps for one pair and model.
+
+        Args:
+            query: Parsed query string.
+        """
+        self._send_json(
+            self.state.gradcam(
+                _first(query, "dataset"),
+                int(_first(query, "index", "0") or 0),
+                _first(query, "model") or self.state.models[0],
+                _first(query, "layer"),
             )
         )
 
