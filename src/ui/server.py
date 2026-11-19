@@ -26,7 +26,7 @@ from src.ui.ablations import (
     flatten_run,
     format_value,
 )
-from src.ui.diagnostics import build_dump, cache_path, oci_heatmap
+from src.ui.diagnostics import build_dump, cache_path, response_heatmap
 from src.ui.pairs import PairEntry, filter_pairs, hard_pair_keys, list_pairs, sample_at
 from src.ui.references import (
     SELECTION_PATH,
@@ -131,6 +131,7 @@ class InspectorState:
         self.selection = load_selection(selection_path)
         self._matchers: dict[str, FeatureMatcher] = {}
         self._dumps: dict[tuple[str, int, str], dict[str, object]] = {}
+        self._responses: dict[tuple[str, int, str, int], dict[str, object]] = {}
         self._lock = threading.Lock()
         default = next(iter(self.contexts))
         self.jobs = JobQueue(self.repo_root, self.contexts[default].manifest)
@@ -174,6 +175,8 @@ class InspectorState:
             self.contexts[target] = self._build_context(target)
             for key in [key for key in self._dumps if key[0] == target]:
                 del self._dumps[key]
+            for key in [key for key in self._responses if key[0] == target]:
+                del self._responses[key]
 
     def dataset_names(self) -> list[str]:
         """Return the available dataset keys.
@@ -290,14 +293,14 @@ class InspectorState:
         cache_path(self.cache_dir, model, index).write_text(json.dumps(payload))
         return payload
 
-    def occlusion(
+    def response(
         self,
         dataset_name: str | None,
         index: int,
         model: str,
         grid: int,
     ) -> dict[str, object]:
-        """Run the occlusion sweep for a pair and model.
+        """Run the response sweep on both images for a pair and model.
 
         Args:
             dataset_name: Dataset key.
@@ -306,23 +309,40 @@ class InspectorState:
             grid: Cells per side.
 
         Returns:
-            Heatmap payload.
+            Heatmaps for the reference and the query.
         """
         context = self.context(dataset_name)
         sample = context.dataset.load(sample_at(context.dataset, index))
+        key = (context.name, index, model, max(2, min(grid, 12)))
+        cached = self._responses.get(key)
+        if cached is not None:
+            return cached
         with self._lock:
             matcher = self.matcher(model)
             baseline = matcher.match(
                 context.dataset.reference_crop(sample),
                 _query_image(sample),
             )
-            return oci_heatmap(
-                context.dataset,
-                sample,
-                matcher,
-                baseline,
-                grid=max(2, min(grid, 12)),
-            )
+            payload = {
+                "reference": response_heatmap(
+                    context.dataset,
+                    sample,
+                    matcher,
+                    baseline,
+                    side="reference",
+                    grid=key[3],
+                ),
+                "query": response_heatmap(
+                    context.dataset,
+                    sample,
+                    matcher,
+                    baseline,
+                    side="query",
+                    grid=key[3],
+                ),
+            }
+        self._responses[key] = payload
+        return payload
 
     # ---------------------------------------------------------- references
     def references(self, dataset_name: str | None) -> dict[str, object]:
@@ -624,8 +644,8 @@ class InspectorHandler(BaseHTTPRequestHandler):
                 self._pairs(query)
             elif parsed.path == "/api/pair":
                 self._pair(query)
-            elif parsed.path == "/api/occlusion":
-                self._occlusion(query)
+            elif parsed.path == "/api/response":
+                self._response(query)
             elif parsed.path == "/api/ablations":
                 self._send_json(self.state.ablations())
             elif parsed.path == "/api/reload":
@@ -716,14 +736,14 @@ class InspectorHandler(BaseHTTPRequestHandler):
             )
         )
 
-    def _occlusion(self, query: dict[str, list[str]]) -> None:
-        """Return the occlusion heatmap for one pair and model.
+    def _response(self, query: dict[str, list[str]]) -> None:
+        """Return the response heatmaps for one pair and model.
 
         Args:
             query: Parsed query string.
         """
         self._send_json(
-            self.state.occlusion(
+            self.state.response(
                 _first(query, "dataset"),
                 int(_first(query, "index", "0") or 0),
                 _first(query, "model") or self.state.models[0],

@@ -84,6 +84,16 @@ class LightGlueFeatureMatcher(FeatureMatcher):
 
             keypoints0 = features0["keypoints"][0].detach().cpu().numpy()
             keypoints1 = features1["keypoints"][0].detach().cpu().numpy()
+            detector_scores0 = (
+                features0["keypoint_scores"][0].detach().cpu().numpy()
+                if "keypoint_scores" in features0
+                else None
+            )
+            detector_scores1 = (
+                features1["keypoint_scores"][0].detach().cpu().numpy()
+                if "keypoint_scores" in features1
+                else None
+            )
             matched = output["matches"][0].detach().cpu().numpy()
             raw_scores = (
                 output["scores"][0].detach().cpu().numpy()
@@ -93,7 +103,20 @@ class LightGlueFeatureMatcher(FeatureMatcher):
 
         pairs = tuple((int(index0), int(index1)) for index0, index1 in matched)
         if not pairs:
-            return MatchResult(keypoints0=keypoints0, keypoints1=keypoints1)
+            return MatchResult(
+                keypoints0=keypoints0,
+                keypoints1=keypoints1,
+                keypoint_scores0=(
+                    tuple(float(value) for value in detector_scores0)
+                    if detector_scores0 is not None
+                    else ()
+                ),
+                keypoint_scores1=(
+                    tuple(float(value) for value in detector_scores1)
+                    if detector_scores1 is not None
+                    else ()
+                ),
+            )
 
         source = keypoints0[[index0 for index0, _ in pairs]]
         target = keypoints1[[index1 for _, index1 in pairs]]
@@ -112,6 +135,16 @@ class LightGlueFeatureMatcher(FeatureMatcher):
             keypoints1=keypoints1,
             matches=pairs,
             scores=scores,
+            keypoint_scores0=(
+                tuple(float(value) for value in detector_scores0)
+                if detector_scores0 is not None
+                else ()
+            ),
+            keypoint_scores1=(
+                tuple(float(value) for value in detector_scores1)
+                if detector_scores1 is not None
+                else ()
+            ),
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(pairs),

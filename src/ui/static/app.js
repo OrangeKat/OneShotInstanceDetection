@@ -9,7 +9,7 @@ const STATE = {
   model: null,
   dump: null,
   view: { scale: 1, tx: 0, ty: 0 },
-  occlusion: null,
+  response: null,
   lineWidth: Number(localStorage.getItem("lineWidth") || 2),
   dataset: null,
   datasets: [],
@@ -113,7 +113,7 @@ function renderPairs() {
 
 async function selectPair(index) {
   STATE.index = index;
-  STATE.occlusion = null;
+  STATE.response = null;
   renderPairs();
   await loadDump();
 }
@@ -151,6 +151,9 @@ function renderMeta() {
     ? residualValues.sort((a, b) => a - b)[Math.floor(residualValues.length / 2)]
     : null;
   el("meta").innerHTML = "";
+  const keypointInfo = dump.reference_keypoint_count
+    ? `${dump.reference_keypoint_count} / ${dump.query_keypoint_count}`
+    : "none";
   const parts = [
     ["pair", `${dump.instance_id} / ${dump.query}`],
     ["model", dump.model],
@@ -158,6 +161,7 @@ function renderMeta() {
     ["inliers", `${dump.inlier_count} (${inlierShare}%)`],
     ["median residual", `${formatNumber(medianResidual)} px`],
     ["scores", dump.has_scores ? "available" : "not exposed"],
+    ["keypoints", keypointInfo],
   ];
   for (const [label, value] of parts) {
     const span = document.createElement("span");
@@ -211,12 +215,17 @@ function draw() {
     match.y1 * queryScale + offsetY,
   ];
 
+  if (el("keypoints").checked) {
+    drawKeypoints(root, dump.reference_keypoints, 0, offsetY, refW, refH, "ref");
+    drawKeypoints(root, dump.query_keypoints, queryX, offsetY, queryW, queryH, "query");
+  }
   if (el("density").checked) {
     drawDensity(root, dump.reference_density, 0, offsetY, refW, refH);
     drawDensity(root, dump.query_density, queryX, offsetY, queryW, queryH);
   }
-  if (STATE.occlusion) {
-    drawOcclusion(root, STATE.occlusion, 0, offsetY, refW, refH);
+  if (STATE.response) {
+    drawResponse(root, STATE.response.reference, 0, offsetY, refW, refH);
+    drawResponse(root, STATE.response.query, queryX, offsetY, queryW, queryH);
   }
 
   const linkOpacity = Math.min(0.45, Math.max(0.1, 30 / Math.max(1, dump.matches.length)));
@@ -302,7 +311,8 @@ function draw() {
   legend.innerHTML =
     '<span><i style="background:#35c07a"></i>inlier</span>' +
     '<span><i style="background:#ef6b6b"></i>outlier</span>' +
-    '<span><i style="background:#f0a94a"></i>residual to homography</span>';
+    '<span><i style="background:#f0a94a"></i>residual to homography</span>' +
+    (STATE.response ? '<span><i style="background:#eb463c"></i>response (red = depended on)</span>' : '');
   viewer.append(legend);
 
   viewer.append(svg);
@@ -316,6 +326,29 @@ function projectPoint(match, homography, scale, offsetX, offsetY) {
   const x = (h[0][0] * match.x0 + h[0][1] * match.y0 + h[0][2]) / denominator;
   const y = (h[1][0] * match.x0 + h[1][1] * match.y0 + h[1][2]) / denominator;
   return [offsetX + x * scale, offsetY + y * scale];
+}
+
+function drawKeypoints(root, points, x, y, width, height, side) {
+  if (!points?.length) return;
+  const limit = Number(el("topk").value) || points.length;
+  const shown = points.slice(0, limit);
+  const scores = shown.map((point) => point[2]);
+  const peak = Math.max(...scores, 1e-6);
+  const layer = svgEl("g", { opacity: 0.85 });
+  for (const [px, py, score] of shown) {
+    const relative = Math.max(0.15, score / peak);
+    layer.append(
+      svgEl("circle", {
+        cx: x + (px / (side === "ref" ? STATE.dump.reference_size[0] : STATE.dump.query_size[0])) * width,
+        cy: y + (py / (side === "ref" ? STATE.dump.reference_size[1] : STATE.dump.query_size[1])) * height,
+        r: 1.4 + 2.6 * relative,
+        fill: side === "ref" ? "#9fd0ff" : "#b9f0d0",
+        "fill-opacity": 0.45 + 0.45 * relative,
+        stroke: "none",
+      }),
+    );
+  }
+  root.append(layer);
 }
 
 function drawDensity(root, grid, x, y, width, height) {
@@ -341,27 +374,40 @@ function drawDensity(root, grid, x, y, width, height) {
   root.append(layer);
 }
 
-function drawOcclusion(root, heat, x, y, width, height) {
-  const cells = heat.cells ?? [];
+function drawResponse(root, heat, x, y, width, height) {
+  const cells = heat?.cells ?? [];
   if (!cells.length) return;
   const rows = cells.length;
   const columns = cells[0].length;
-  const layer = svgEl("g", { opacity: 0.55 });
+  const peak = Math.max(...cells.flat(), 0);
+  if (peak <= 0) return;
+  const layer = svgEl("g");
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
-      const survival = cells[row][column];
+      const value = cells[row][column] / peak;
+      if (value < 0.08) continue;
       layer.append(
         svgEl("rect", {
           x: x + (column / columns) * width,
           y: y + (row / rows) * height,
           width: width / columns,
           height: height / rows,
-          fill: `rgba(240,169,74,${Math.min(0.85, survival)})`,
+          fill: responseColor(value),
         }),
       );
     }
   }
   root.append(layer);
+}
+
+// Amber (weak) to red (the match set depends on this cell). Values are
+// normalized per image, so the map shows where, not how much overall.
+function responseColor(value) {
+  const alpha = 0.16 + 0.62 * value;
+  const red = 255;
+  const green = Math.round(196 - 130 * value);
+  const blue = Math.round(60 - 40 * value);
+  return `rgba(${red},${green},${blue},${alpha.toFixed(3)})`;
 }
 
 // Clicking a point pins its numbers into the meta bar so they can be read
@@ -437,24 +483,27 @@ function attachPanZoom(svg, root) {
   apply();
 }
 
-async function runOcclusion() {
+async function runResponse() {
   if (STATE.index === null) return;
-  const button = el("occlusion");
+  const button = el("response");
   button.disabled = true;
+  const previous = button.textContent;
   button.textContent = "running…";
+  el("meta").textContent = "running response sweep…";
   try {
-    STATE.occlusion = await api("/api/occlusion", {
+    STATE.response = await api("/api/response", {
       dataset: STATE.dataset,
       index: STATE.index,
       model: STATE.model,
       grid: 6,
     });
+    renderMeta();
     draw();
   } catch (error) {
-    el("meta").textContent = `occlusion failed: ${error.message}`;
+    el("meta").textContent = `response failed: ${error.message}`;
   } finally {
     button.disabled = false;
-    button.textContent = "Occlusion";
+    button.textContent = previous;
   }
 }
 
@@ -468,6 +517,7 @@ function restorePersisted() {
     "residuals",
     "density",
     "labels",
+    "keypoints",
     "hard-only",
     "line-width",
   ]) {
@@ -479,6 +529,8 @@ function restorePersisted() {
   }
   STATE.lineWidth = Number(el("line-width").value);
   STATE.labels = el("labels").checked;
+  el("keypoints").addEventListener("change", () => draw());
+  el("topk").addEventListener("change", () => draw());
 }
 
 function wireEvents() {
@@ -493,14 +545,14 @@ function wireEvents() {
     persist("hard-only", el("hard-only").checked ? "1" : "0");
     loadPairs();
   });
-  for (const id of ["links", "residuals", "density", "labels"]) {
+  for (const id of ["links", "residuals", "density", "labels", "keypoints"]) {
     el(id).addEventListener("change", () => {
       persist(id, el(id).checked ? "1" : "0");
       if (id === "labels") STATE.labels = el(id).checked;
       draw();
     });
   }
-  el("occlusion").addEventListener("click", () => runOcclusion());
+  el("response").addEventListener("click", () => runResponse());
   el("tab-inspector").addEventListener("click", () => showView("inspector"));
   el("tab-references").addEventListener("click", () => showView("references"));
   el("tab-ablations").addEventListener("click", () => showView("ablations"));
@@ -540,8 +592,10 @@ function wireHelp() {
     labels: "Tag the strongest query points with their reference index.",
     residuals: "Show each match's error against the homography.",
     density: "Overlay where matches concentrate on each image.",
+    keypoints: "Show detected keypoints, sized by detector response.",
+    topk: "How many keypoints per image to show.",
     "line-width": "Thickness of links and residual arrows.",
-    occlusion: "Find which reference regions the matches depend on.",
+    response: "Show which image regions the matches depend on.",
   };
   for (const [id, text] of Object.entries(hints)) {
     const node = el(id);
@@ -566,7 +620,13 @@ function wireHelp() {
       button.setAttribute("aria-expanded", String(wrap.classList.contains("open")));
       return;
     }
-    const layers = { l: "links", r: "residuals", d: "density", n: "labels" };
+    const layers = {
+      l: "links",
+      r: "residuals",
+      d: "density",
+      n: "labels",
+      k: "keypoints",
+    };
     const layer = layers[event.key.toLowerCase()];
     if (layer) {
       const node = el(layer);
@@ -771,7 +831,7 @@ async function reloadData() {
     const response = await fetch("/api/reload", { method: "POST" });
     if (!response.ok) throw new Error(response.statusText);
     STATE.dump = null;
-    STATE.occlusion = null;
+    STATE.response = null;
     await loadDatasets();
     await loadPairs();
     if (STATE.index !== null) await loadDump(true);

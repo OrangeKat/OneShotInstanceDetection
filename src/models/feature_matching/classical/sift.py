@@ -57,10 +57,24 @@ class SIFTMatcher(FeatureMatcher):
         )
         keypoints1, descriptors1 = self._detector.detectAndCompute(to_gray(query), None)
         if descriptors0 is None or descriptors1 is None:
-            return self._result(keypoints0, keypoints1, ())
+            return self._result(
+                keypoints0,
+                keypoints1,
+                (),
+                (),
+                tuple(float(keypoint.response) for keypoint in keypoints0),
+                tuple(float(keypoint.response) for keypoint in keypoints1),
+            )
 
         matches, scores = ratio_test_scored(
             self._matcher.knnMatch(descriptors0, descriptors1, k=2),
             self.ratio,
         )
-        return self._result(keypoints0, keypoints1, matches, scores)
+        return self._result(
+            keypoints0,
+            keypoints1,
+            matches,
+            scores,
+            tuple(float(keypoint.response) for keypoint in keypoints0),
+            tuple(float(keypoint.response) for keypoint in keypoints1),
+        )

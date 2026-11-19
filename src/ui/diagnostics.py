@@ -16,7 +16,7 @@ import numpy as np
 from src.models.feature_matching.base import FeatureMatcher, MatchResult
 from src.utils.dataset import InstanceDataset, InstanceSample
 
-__all__ = ["build_dump", "density_grid", "oci_heatmap"]
+__all__ = ["build_dump", "density_grid", "response_heatmap"]
 
 DENSITY_BINS = 32
 OCLUSION_FILL = 127
@@ -154,7 +154,16 @@ def build_dump(
         points1[[index1 for _, index1 in matches]] if matches else points1[:0]
     )
 
-    return {
+    keypoint_scores0 = list(result.keypoint_scores0)
+    keypoint_scores1 = list(result.keypoint_scores1)
+    keypoint_payload = {
+        "reference_keypoints": _keypoint_rows(points0, keypoint_scores0),
+        "query_keypoints": _keypoint_rows(points1, keypoint_scores1),
+        "reference_keypoint_count": len(points0) if keypoint_scores0 else 0,
+        "query_keypoint_count": len(points1) if keypoint_scores1 else 0,
+    }
+
+    payload = {
         "model": model,
         "index": index,
         "instance_id": sample.instance_id,
@@ -180,56 +189,101 @@ def build_dump(
             query_height,
         ),
     }
+    payload.update(keypoint_payload)
+    return payload
 
 
-def oci_heatmap(
+def _keypoint_rows(
+    points: np.ndarray,
+    scores: Sequence[float],
+) -> list[list[float]]:
+    """Return keypoints with their detector response.
+
+    Args:
+        points: ``(N, 2)`` keypoint coordinates.
+        scores: Detector response aligned with ``points``.
+
+    Returns:
+        ``[x, y, score]`` rows, empty when the matcher has no detector output.
+    """
+    if not scores or len(scores) != len(points):
+        return []
+    rows = [
+        [round(float(point[0]), 2), round(float(point[1]), 2), round(float(score), 4)]
+        for point, score in zip(points, scores)
+    ]
+    rows.sort(key=lambda row: row[2], reverse=True)
+    return rows[:4096]
+
+
+def response_heatmap(
     dataset: InstanceDataset,
     sample: InstanceSample,
     matcher: FeatureMatcher,
     baseline: MatchResult,
     *,
+    side: str = "reference",
     grid: int = 6,
 ) -> dict[str, object]:
-    """Measure which reference regions the matches depend on.
+    """Measure where a matcher's correspondence set depends on the input.
 
     Each cell of a ``grid x grid`` overlay is filled with flat grey and the
-    matcher re-run. The value reported per cell is the share of baseline matches
-    that survive, so high values mark regions the correspondence set relies on.
+    matcher re-run. A cell scores high when blanking it removes matches or
+    lowers their confidence, which is the empirical version of "the model looks
+    here".
 
     Args:
         dataset: Manifest-backed dataset.
         sample: Pair to inspect, with images already loaded.
         matcher: Matcher instance to re-run.
         baseline: Unmodified match result for the same pair.
+        side: ``reference`` or ``query``.
         grid: Cells per side.
 
     Returns:
-        JSON-serializable heatmap with survival shares and the cell geometry.
+        JSON-serializable heatmap with per-cell drop values.
+
+    Raises:
+        ValueError: If the side is unknown or the images are missing.
     """
     reference = dataset.reference_crop(sample)
     query = sample.query_image
     if query is None:
         raise ValueError("query image is not loaded")
-    height, width = reference.shape[:2]
-    base_pairs = _match_keys(baseline)
-    if not base_pairs:
-        return {"grid": grid, "cells": [], "note": "model produced no matches"}
+    if side not in {"reference", "query"}:
+        raise ValueError(f"unknown side: {side}")
+    image = reference if side == "reference" else query
+    height, width = image.shape[:2]
 
-    values: list[list[float]] = []
+    base_count = len(baseline.matches)
+    base_score = float(sum(baseline.scores)) if baseline.scores else float(base_count)
+    if base_count == 0:
+        return {"side": side, "grid": grid, "cells": [], "note": "no matches"}
+
+    cells: list[list[float]] = []
     for row in range(grid):
         row_values: list[float] = []
         for column in range(grid):
-            occluded = reference.copy()
+            occluded = image.copy()
             y0 = int(height * row / grid)
             y1 = int(height * (row + 1) / grid)
             x0 = int(width * column / grid)
             x1 = int(width * (column + 1) / grid)
             occluded[y0:y1, x0:x1] = OCLUSION_FILL
-            result = matcher.match(occluded, query)
-            kept = len(base_pairs & _match_keys(result))
-            row_values.append(round(kept / len(base_pairs), 3))
-        values.append(row_values)
-    return {"grid": grid, "size": [width, height], "cells": values}
+            if side == "reference":
+                result = matcher.match(occluded, query)
+            else:
+                result = matcher.match(reference, occluded)
+            kept = len(result.matches) / base_count
+            score = (
+                float(sum(result.scores)) / base_score
+                if result.scores and base_score > 0
+                else kept
+            )
+            keep = 0.5 * min(1.0, kept) + 0.5 * min(1.0, score)
+            row_values.append(round(max(0.0, 1.0 - keep), 3))
+        cells.append(row_values)
+    return {"side": side, "grid": grid, "size": [width, height], "cells": cells}
 
 
 def _match_keys(result: MatchResult) -> set[tuple[int, int]]:

@@ -3,7 +3,7 @@
 
 Runs against an already-running ``main.py ui`` server. Every check exercises a
 control the way a person would: clicking layers, hovering a match, switching
-tabs, choosing a reference, running an occlusion sweep. Console errors and
+tabs, choosing a reference, running a response sweep. Console errors and
 failed requests fail the run, because a broken control often looks fine until
 the browser complains.
 
@@ -114,8 +114,30 @@ def inspect_view(page: Page) -> None:
         page.locator("#viewer svg text").count() > 0,
     )
 
+    before_keypoints = page.locator("#viewer svg circle").count()
+    page.locator("label.chip:has(#keypoints)").click()
+    page.wait_for_timeout(400)
+    with_keypoints = page.locator("#viewer svg circle").count()
+    check(
+        "keypoints layer adds points",
+        with_keypoints > before_keypoints,
+        f"{before_keypoints} -> {with_keypoints}",
+    )
+
+    page.select_option("#topk", "100")
+    page.wait_for_timeout(400)
+    topk_markers = page.locator("#viewer svg circle").count()
+    check(
+        "top-k limits keypoints",
+        topk_markers < with_keypoints,
+        f"{with_keypoints} -> {topk_markers}",
+    )
+    page.select_option("#topk", "0")
+    page.locator("label.chip:has(#keypoints)").click()
+    page.wait_for_timeout(300)
+
     first = page.locator("#viewer svg circle").first
-    first.hover()
+    first.hover(force=True)
     page.wait_for_timeout(200)
     tooltip_visible = page.locator("#tooltip").is_visible()
     tooltip_text = page.inner_text("#tooltip") if tooltip_visible else ""
@@ -225,8 +247,8 @@ def dataset_switch(page: Page) -> None:
     check("single-reference dataset hides the picker", single == 1)
 
 
-def occlusion(page: Page) -> None:
-    """Run one occlusion sweep and wait for it to finish.
+def response(page: Page) -> None:
+    """Run one response sweep and wait for it to finish.
 
     Args:
         page: Page under test.
@@ -234,13 +256,13 @@ def occlusion(page: Page) -> None:
     page.select_option("#dataset", "flickrlogos32")
     page.click("#tab-inspector")
     wait_pairs(page)
-    page.click("#occlusion")
+    page.click("#response")
     page.wait_for_function(
-        "() => !document.querySelector('#occlusion').disabled",
+        "() => !document.querySelector('#response').disabled",
         timeout=180_000,
     )
     failed = "failed" in page.inner_text("#meta").lower()
-    check("occlusion sweep completes", not failed, page.inner_text("#meta")[:60])
+    check("response sweep completes", not failed, page.inner_text("#meta")[:60])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -259,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path("outputs/ui/smoke"),
     )
-    parser.add_argument("--skip-occlusion", action="store_true")
+    parser.add_argument("--skip-response", action="store_true")
     parser.add_argument(
         "--allow-writes",
         action="store_true",
@@ -289,11 +311,11 @@ def main(argv: list[str] | None = None) -> int:
             f"{args.url}/#inspector", args.screenshots, "datasets"
         ) as page:
             dataset_switch(page)
-        if not args.skip_occlusion:
+        if not args.skip_response:
             with browser_page(
-                f"{args.url}/?model=sift#inspector", args.screenshots, "occlusion"
+                f"{args.url}/?model=sift#inspector", args.screenshots, "response"
             ) as page:
-                occlusion(page)
+                response(page)
     except PlaywrightError as error:
         check("page reached", False, str(error))
 

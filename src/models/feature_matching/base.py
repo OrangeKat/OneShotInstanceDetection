@@ -32,6 +32,9 @@ class MatchResult:
         inlier_mask: RANSAC inlier mask aligned with ``matches``.
         scores: Per-match confidence aligned with ``matches``, empty when the
             matcher does not expose one.
+        keypoint_scores0: Detector response for ``keypoints0``, empty for dense
+            matchers that do not detect keypoints.
+        keypoint_scores1: Detector response for ``keypoints1``.
         match_count: Number of matches after the ratio test.
         inlier_count: Number of RANSAC inliers.
     """
@@ -40,6 +43,8 @@ class MatchResult:
     keypoints1: np.ndarray
     matches: tuple[tuple[int, int], ...] = ()
     scores: tuple[float, ...] = ()
+    keypoint_scores0: tuple[float, ...] = ()
+    keypoint_scores1: tuple[float, ...] = ()
     homography: np.ndarray | None = None
     inlier_mask: np.ndarray | None = None
     match_count: int = 0
@@ -94,6 +99,8 @@ class FeatureMatcher(ABC):
         keypoints1: Sequence[cv2.KeyPoint],
         matches: tuple[tuple[int, int], ...],
         scores: tuple[float, ...] = (),
+        keypoint_scores0: tuple[float, ...] = (),
+        keypoint_scores1: tuple[float, ...] = (),
     ) -> MatchResult:
         """Estimate a homography and package a match result.
 
@@ -102,6 +109,8 @@ class FeatureMatcher(ABC):
             keypoints1: Query keypoints.
             matches: Matched index pairs after the ratio test.
             scores: Optional per-match confidence aligned with ``matches``.
+            keypoint_scores0: Detector response per reference keypoint.
+            keypoint_scores1: Detector response per query keypoint.
 
         Returns:
             A populated match result.
@@ -109,7 +118,12 @@ class FeatureMatcher(ABC):
         points0 = keypoint_points(keypoints0)
         points1 = keypoint_points(keypoints1)
         if not matches:
-            return MatchResult(keypoints0=points0, keypoints1=points1)
+            return MatchResult(
+                keypoints0=points0,
+                keypoints1=points1,
+                keypoint_scores0=keypoint_scores0,
+                keypoint_scores1=keypoint_scores1,
+            )
 
         source = points0[[index for index, _ in matches]]
         target = points1[[index for _, index in matches]]
@@ -123,6 +137,8 @@ class FeatureMatcher(ABC):
             keypoints1=points1,
             matches=matches,
             scores=scores,
+            keypoint_scores0=keypoint_scores0,
+            keypoint_scores1=keypoint_scores1,
             homography=homography,
             inlier_mask=inlier_mask,
             match_count=len(matches),

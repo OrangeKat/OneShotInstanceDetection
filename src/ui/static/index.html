@@ -74,11 +74,20 @@
               Thickness of links and residual arrows. Raise it when a pair has
               many correspondences and the lines disappear into the image.
             </dd>
-            <dt>Occlusion</dt>
+            <dt>Response</dt>
             <dd>
-              Greys out each cell of the reference in turn and re-runs the
-              matcher. Cells where matches vanish are the ones the result
-              depends on. Slow: one matcher run per cell.
+              Greys out each cell of the reference and of the query in turn and
+              re-runs the matcher. Red cells are the ones whose removal costs
+              matches or confidence, so the heatmap shows where the model
+              actually looks. Slow: one matcher run per cell per image.
+            </dd>
+            <dt>Keypoints</dt>
+            <dd>
+              Shows the keypoints each side detected, before matching, sized by
+              detector response. <b>Top k</b> keeps only the strongest k per
+              image, which is how you check whether a region produced any
+              usable features at all. Dense matchers have no keypoints, so the
+              layer stays empty for them.
             </dd>
             <dt>Point labels</dt>
             <dd>
@@ -158,8 +167,23 @@
                 <input id="labels" type="checkbox" checked />
                 <span>Labels</span>
               </label>
+              <label class="chip">
+                <input id="keypoints" type="checkbox" />
+                <span>Keypoints</span>
+              </label>
             </div>
           </div>
+
+          <label class="field">
+            <span>Top k</span>
+            <select id="topk">
+              <option value="100">100</option>
+              <option value="250">250</option>
+              <option value="500" selected>500</option>
+              <option value="1000">1000</option>
+              <option value="0">all</option>
+            </select>
+          </label>
 
           <label class="field range">
             <span>Line width</span>
@@ -174,7 +198,7 @@
           </label>
 
           <div class="spacer"></div>
-          <button id="occlusion" class="btn ghost" type="button">Occlusion</button>
+          <button id="response" class="btn ghost" type="button">Response</button>
         </div>
 
         <div id="meta" class="metabar"></div>
