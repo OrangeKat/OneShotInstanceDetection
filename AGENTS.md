@@ -54,6 +54,7 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 | `scripts/diagnose.py` | single-pair overlay, stage, stability, and oracles |
 | `scripts/visualize_matches.py` | match-overlay gallery from a result file |
 | `scripts/compare_datasets.py` | model × dataset result matrix |
+| `scripts/taxonomy.py` | failure taxonomy: cause per pair from recorded evidence |
 | `scripts/sweep.py` | one-factor keypoints/RANSAC/size/ratio sweeps |
 | `scripts/aggregate_runs.py` | mean/std over repeated runs |
 | `scripts/run_all.py` | bench-all orchestration across datasets |
