@@ -41,6 +41,8 @@ dependencies = [
     "matplotlib>=3.11.2",
     "kornia>=0.9.0",
     "einops>=0.8.2",
+    # Frozen DINOv3 backbone for the model under development.
+    "timm>=1.0.20",
     "loguru>=0.7.3",
     "scipy>=1.18.1",
     "pyarrow>=26.0.1",

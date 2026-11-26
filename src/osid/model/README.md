@@ -1,41 +1,48 @@
-# model/
+# osid/model
 
-The model under development. Empty by design: week 4 is the first week that
-builds it.
+The boundary-anchored matcher: given a reference crop and a query image, put
+keypoints on the object outline, describe them, and match them.
+
+Status: scaffold. The pipeline runs end to end, but the decoder and heads are
+untrained, so the output is structurally correct and semantically meaningless
+until Phase 0 in [`docs/model-design.md`](../../../docs/model-design.md) says
+the premise is worth training.
+
+## Reading order
+
+| File | What it does | Where to change things |
+|---|---|---|
+| `config.py` | every knob, in one dataclass | backbone name, input size, tapped layers, widths, top-k, thresholds |
+| `backbone.py` | frozen DINOv3 ViT-S/16, multi-layer features, resize + normalise, feature→pixel mapping | swap the backbone, change how layers are tapped or resized |
+| `heads.py` | fusion decoder to stride 4, boundary head, descriptor head | decoder depth, channel widths, head design |
+| `matcher.py` | local-maxima keypoint selection, mutual-NN matching with a ratio test | how keypoints are picked, how matching is scored |
+| `model.py` | the pipeline: `match(reference, query) -> MatchResult` | wiring, homography estimation |
+| `hub.py` | save/load and upload to the Hugging Face Hub | staging, repo naming |
+| `__main__.py` | run one pair and write an overlay | the quickest way to see the model work |
+
+## Run it
+
+```bash
+uv run python -m osid.model --index 0
+uv run python -m osid.model --instance carlsberg --query 145074777.jpg --top-k 256
+```
+
+It prints keypoint and match counts and writes `outputs/model-demo.png` with the
+reference and query side by side.
 
 ## Contract
 
-The benchmark must be able to run it like any baseline, so the model implements
-the same interface the matchers do:
+`BoundaryModel.match` returns the same `MatchResult` the eight baselines return,
+so once the weights are trained it can be registered in
+`osid.benchmark.registry.MODELS` and benchmarked on both protocols with no new
+plumbing.
 
-```python
-class Model:
-    def match(self, reference: np.ndarray, query: np.ndarray) -> MatchResult: ...
-```
+## Deliberate omissions
 
-with `MatchResult` from `benchmark.matchers.base`. That is what makes it
-comparable: same manifest, same protocol, same reports, registered once in
-`benchmark.registry.MODELS`.
-
-## What it will be
-
-Given a reference crop and a query image, predict keypoints on both and the
-correspondences between them, with keypoints on the **outline of the object**
-rather than anywhere the detector finds contrast.
-
-The design, the falsification conditions, and the measurements that gate
-training are in [`docs/model-design.md`](../../../docs/model-design.md).
-
-## Layout
-
-```
-model/
-├── README.md      this file
-├── __init__.py    package marker
-├── detector.py    boundary-aware keypoint head (not written yet)
-├── descriptor.py  descriptors and matching (not written yet)
-└── geometry.py    similarity/box prediction (not written yet)
-```
-
-Those files are placeholders for the design, not commitments: Phase 0 decides
-whether the boundary premise survives before any of them is written.
+- **No training loop yet.** The design says measure first; Phase 0 is in
+  `scripts/analysis/`.
+- **No multi-instance output.** One homography, like the baselines, so the
+  comparison stays like-for-like.
+- **Descriptors come from the same decoder as the boundary map.** That is a
+  choice worth revisiting: a separate descriptor branch may match better, at the
+  cost of another head to train.
