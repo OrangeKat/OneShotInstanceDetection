@@ -1,4 +1,4 @@
-"""Save and load the model, locally or on the Hugging Face Hub.
+"""Save and load the detector, locally or on the Hugging Face Hub.
 
 Only the trained parts are stored: the decoder and the two heads. The backbone
 is a published DINOv3 checkpoint, referenced by name, so the upload stays small
@@ -7,7 +7,7 @@ and the upstream weights keep their own licence.
 Usage:
     from osid.model.hub import push_to_hub
 
-    model = BoundaryModel()
+    model = DetectorDescriptor()
     push_to_hub(model, "your-name/osid-boundary", private=True)
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 
 from osid.model.config import ModelConfig
-from osid.model.model import BoundaryModel
+from osid.model.detector import DetectorDescriptor
 
 __all__ = ["from_pretrained", "load_local", "push_to_hub", "save_local"]
 
@@ -28,7 +28,7 @@ CONFIG_FILE = "config.json"
 WEIGHTS_FILE = "model.pt"
 
 
-def save_local(model: BoundaryModel, directory: Path) -> Path:
+def save_local(model: DetectorDescriptor, directory: Path) -> Path:
     """Write the trained weights and the architecture config.
 
     Args:
@@ -52,7 +52,7 @@ def save_local(model: BoundaryModel, directory: Path) -> Path:
     return directory
 
 
-def load_local(directory: Path, *, device: str | None = None) -> BoundaryModel:
+def load_local(directory: Path, *, device: str | None = None) -> DetectorDescriptor:
     """Load a model saved with :func:`save_local`.
 
     Args:
@@ -65,7 +65,7 @@ def load_local(directory: Path, *, device: str | None = None) -> BoundaryModel:
     directory = Path(directory)
     payload = json.loads((directory / CONFIG_FILE).read_text())
     config = ModelConfig(**payload)
-    model = BoundaryModel(config, device=device)
+    model = DetectorDescriptor(config, device=device)
     state = torch.load(directory / WEIGHTS_FILE, map_location=model.device)
     model.decoder.load_state_dict(state["decoder"])
     model.boundary.load_state_dict(state["boundary"])
@@ -77,7 +77,7 @@ def load_local(directory: Path, *, device: str | None = None) -> BoundaryModel:
 
 
 def push_to_hub(
-    model: BoundaryModel,
+    model: DetectorDescriptor,
     repo_id: str,
     *,
     private: bool = True,
@@ -114,7 +114,7 @@ def push_to_hub(
     return f"https://huggingface.co/{repo_id}"
 
 
-def from_pretrained(repo_id: str, *, device: str | None = None) -> BoundaryModel:
+def from_pretrained(repo_id: str, *, device: str | None = None) -> DetectorDescriptor:
     """Download a published model and load it.
 
     Args:

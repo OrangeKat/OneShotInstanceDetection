@@ -43,8 +43,10 @@ plausible and cheap to test.
 
 | | |
 |---|---|
-| Input | reference crop (RGB), query image (RGB) |
-| Output | keypoints on the reference `(N, 2)` with a boundary score; keypoints on the query `(M, 2)`; matches `(K, 2)` index pairs; optional homography |
+| Input | one image (RGB) |
+| Output | keypoints `(N, 2)` with a boundary score each, and descriptors `(N, D)` |
+| Matching | a separate stage: mutual NN with a ratio test today, learned later |
+| Contract | `DetectorDescriptor.detect(image)`; `BenchmarkAdapter.match(reference, query)` for the harness |
 | Optional | per-keypoint "on-object" probability, so downstream code can weight or reject |
 | Not in scope | multiple instances, class labels, tracking |
 
@@ -83,11 +85,13 @@ Phase 0 uses option 1, because it needs to run this week.
 
 ## 6. Architecture options
 
-**A. Boundary-aware detector, existing matcher.** Replace the detector inside the
-current pipeline with one trained (or filtered) to fire on instance boundaries;
-keep LightGlue or the ratio test for matching. Smallest change, directly testable
-against the current numbers, and it isolates the claim: if A does not help, the
-idea is wrong for this data.
+**A. Boundary-aware detector and descriptor, separate matcher.** A per-image
+network that emits keypoints and descriptors, with matching left as a replaceable
+stage: ratio-tested mutual nearest neighbours first, a learned matcher later.
+Smallest change, directly testable against the current numbers, and it isolates
+the claim: if A does not help, the idea is wrong for this data. Implemented in
+`src/osid/model/` as `DetectorDescriptor`, with `BenchmarkAdapter` supplying the
+matcher for the harness.
 
 **B. Joint detector and descriptor.** A SuperPoint-style network whose detector
 head is supervised on boundaries and whose descriptor head is trained on the

@@ -1,15 +1,18 @@
-"""Boundary-anchored keypoint matching model.
+"""Boundary-anchored keypoint detection and description.
 
-Architecture, in reading order:
+The model is per-image: one image in, keypoints and descriptors out.
 
-- ``config.py``   knobs (backbone, input size, layers, widths, thresholds)
-- ``backbone.py`` frozen DINOv3 ViT, multi-layer features, pixel geometry
-- ``heads.py``    fusion decoder at stride 4, boundary head, descriptor head
-- ``matcher.py``  local-maxima keypoints, mutual-NN matching with a ratio test
-- ``model.py``    the pipeline, exposed as ``match(reference, query)``
+- ``config.py``    knobs (backbone, input size, layers, widths, thresholds)
+- ``backbone.py``  frozen DINOv3 ViT, multi-layer features, pixel geometry
+- ``heads.py``     fusion decoder at stride 4, boundary head, descriptor head
+- ``detector.py``  the model: ``detect(image) -> Detections``
+- ``matcher.py``   matching utilities (mutual NN, ratio test)
+- ``adapter.py``   benchmark adapter: detector on both images plus a matcher
+- ``hub.py``       save/load and Hugging Face upload of the trained heads
 """
 
+from osid.model.adapter import BenchmarkAdapter
 from osid.model.config import ModelConfig
-from osid.model.model import BoundaryModel
+from osid.model.detector import Detections, DetectorDescriptor
 
-__all__ = ["BoundaryModel", "ModelConfig"]
+__all__ = ["BenchmarkAdapter", "Detections", "DetectorDescriptor", "ModelConfig"]

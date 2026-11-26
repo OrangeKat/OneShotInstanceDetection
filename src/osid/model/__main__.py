@@ -1,8 +1,8 @@
-"""Run the model on one benchmark pair and save a visual check.
+"""Detect keypoints on one image and write a visual check.
 
 Usage:
-    uv run python -m osid.model --index 0 --model sift
-    uv run python -m osid.model --instance carlsberg --query 145074777.jpg
+    uv run python -m osid.model --index 0
+    uv run python -m osid.model --image path/to/photo.jpg --top-k 256
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from osid.model.model import BoundaryModel
+from osid.model.detector import Detections, DetectorDescriptor
 from osid.utils.dataset import InstanceDataset
 
 __all__ = ["main"]
@@ -28,15 +28,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     Returns:
         Parsed arguments.
     """
-    parser = argparse.ArgumentParser(description="Visualise the model on one pair.")
-    parser.add_argument(
+    parser = argparse.ArgumentParser(description="Detect keypoints on one image.")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--image", type=Path, help="Image file to run on.")
+    source.add_argument(
         "--manifest",
         type=Path,
         default=Path("data/flickrlogos32/manifest.json"),
+        help="Manifest used when --image is not given.",
     )
     parser.add_argument("--index", type=int, default=0)
     parser.add_argument("--instance")
-    parser.add_argument("--query")
+    parser.add_argument("--query", help="Query file name for the manifest pair.")
+    parser.add_argument(
+        "--reference",
+        action="store_true",
+        help="Run on the reference crop instead of the query.",
+    )
     parser.add_argument("--input-size", type=int, default=448)
     parser.add_argument("--top-k", type=int, default=512)
     parser.add_argument("--device", default=None)
@@ -49,7 +57,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the model on one pair and write an overlay.
+    """Run the detector on one image and write an overlay.
 
     Args:
         argv: Optional argument list.
@@ -58,6 +66,42 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = parse_args(argv)
+    image, label = _load_image(args)
+    detector = DetectorDescriptor(
+        device=args.device,
+        max_keypoints=args.top_k,
+    )
+    detections = detector.detect(image)
+    print(f"image:     {label}")
+    print(f"keypoints: {len(detections)}")
+    print(f"scores:    {_summary(detections.scores)}")
+    print(
+        f"descriptors: {detections.descriptors.shape}"
+        f" | norm {np.linalg.norm(detections.descriptors, axis=1).mean():.3f}"
+    )
+
+    canvas = _overlay(image, detections)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(args.output), cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    print(f"wrote {args.output}")
+    return 0
+
+
+def _load_image(args: argparse.Namespace) -> tuple[np.ndarray, str]:
+    """Load the requested image.
+
+    Args:
+        args: Parsed arguments.
+
+    Returns:
+        An RGB image and a label for the report.
+    """
+    if args.image is not None:
+        image = cv2.imread(str(args.image), cv2.IMREAD_COLOR)
+        if image is None:
+            raise SystemExit(f"could not read image: {args.image}")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB), str(args.image)
+
     dataset = InstanceDataset(args.manifest)
     sample = None
     if args.instance and args.query:
@@ -74,32 +118,15 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("pair not found in the manifest")
 
     loaded = dataset.load(sample)
-    reference = dataset.reference_crop(loaded)
-    query = loaded.query_image
-    if query is None:
+    if args.reference:
+        return dataset.reference_crop(loaded), f"{sample.instance_id} (reference)"
+    if loaded.query_image is None:
         raise SystemExit("query image failed to load")
-
-    model = BoundaryModel(
-        device=args.device,
-        max_keypoints=args.top_k,
-    )
-    result = model.match(reference, query)
-    print(f"pair: {sample.instance_id} / {sample.query_path.name}")
-    print(f"reference keypoints: {len(result.keypoints0)}")
-    print(f"query keypoints:     {len(result.keypoints1)}")
-    print(f"matches:             {result.match_count} (inliers {result.inlier_count})")
-    print(f"reference scores:    {_summary(result.keypoint_scores0)}")
-    print(f"query scores:        {_summary(result.keypoint_scores1)}")
-
-    canvas = _overlay(reference, query, result)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(args.output), cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
-    print(f"wrote {args.output}")
-    return 0
+    return loaded.query_image, f"{sample.instance_id} / {sample.query_path.name}"
 
 
-def _summary(scores: tuple[float, ...]) -> str:
-    """Summarise a score tuple.
+def _summary(scores: np.ndarray) -> str:
+    """Summarise boundary scores.
 
     Args:
         scores: Boundary probabilities.
@@ -107,60 +134,43 @@ def _summary(scores: tuple[float, ...]) -> str:
     Returns:
         A short text summary.
     """
-    if not scores:
+    if len(scores) == 0:
         return "none"
-    values = np.asarray(scores)
     return (
-        f"n={len(values)} min={values.min():.3f} "
-        f"median={np.median(values):.3f} max={values.max():.3f}"
+        f"n={len(scores)} min={scores.min():.3f} "
+        f"median={np.median(scores):.3f} max={scores.max():.3f}"
     )
 
 
-def _overlay(reference: np.ndarray, query: np.ndarray, result: object) -> np.ndarray:
-    """Draw keypoints on both images side by side.
+def _overlay(image: np.ndarray, detections: Detections) -> np.ndarray:
+    """Draw keypoints, sized and coloured by boundary score.
 
     Args:
-        reference: Reference crop.
-        query: Query image.
-        result: Match result.
+        image: RGB image.
+        detections: Detector output.
 
     Returns:
         An RGB canvas.
     """
-    keypoints0 = getattr(result, "keypoints0")
-    keypoints1 = getattr(result, "keypoints1")
-    scores0 = getattr(result, "keypoint_scores0")
-    scores1 = getattr(result, "keypoint_scores1")
-
-    reference_view = reference.copy()
-    for point, score in zip(keypoints0, scores0):
+    canvas = image.copy()
+    if len(detections) == 0:
+        return canvas
+    scores = detections.scores
+    peak = max(float(scores.max()), 1e-6)
+    for point, score in zip(detections.keypoints, scores):
+        relative = score / peak
+        colour = (
+            int(255 * relative),
+            int(180 * (1.0 - relative) + 60),
+            int(80 * (1.0 - relative)),
+        )
         cv2.circle(
-            reference_view,
+            canvas,
             (int(point[0]), int(point[1])),
-            2,
-            (60, 180, 255),
+            int(2 + 3 * relative),
+            colour,
             -1,
         )
-        if score > 0.5:
-            cv2.circle(
-                reference_view,
-                (int(point[0]), int(point[1])),
-                5,
-                (255, 220, 60),
-                1,
-            )
-    query_view = query.copy()
-    for point, score in zip(keypoints1, scores1):
-        cv2.circle(query_view, (int(point[0]), int(point[1])), 2, (80, 255, 160), -1)
-
-    height = max(reference_view.shape[0], query_view.shape[0])
-    width = reference_view.shape[1] + query_view.shape[1] + 8
-    canvas = np.full((height, width, 3), 20, dtype=np.uint8)
-    canvas[: reference_view.shape[0], : reference_view.shape[1]] = reference_view
-    canvas[
-        : query_view.shape[0],
-        reference_view.shape[1] + 8 :,
-    ] = query_view
     return canvas
 
 
