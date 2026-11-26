@@ -24,15 +24,15 @@ import numpy as np
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from benchmark.geometry import box_iou, predicted_box
-from benchmark.matchers.base import FeatureMatcher
-from benchmark.registry import MODELS
-from utils.dataset import InstanceDataset, InstanceSample
-from utils.diagnostics import Box, match_diagnostics
-from utils.overlay import render_overlay
-from utils.seeding import set_seed
+from osid.benchmark.geometry import box_iou, predicted_box
+from osid.benchmark.matchers.base import FeatureMatcher
+from osid.benchmark.registry import MODELS
+from osid.utils.dataset import InstanceDataset, InstanceSample
+from osid.utils.diagnostics import Box, match_diagnostics
+from osid.utils.overlay import render_overlay
+from osid.utils.seeding import set_seed
 
 
 def main(argv: Sequence[str] | None = None) -> int:

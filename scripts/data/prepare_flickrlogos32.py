@@ -30,9 +30,9 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utils.openlogo import (  # noqa: E402
+from osid.utils.openlogo import (  # noqa: E402
     Box,
     LogoImage,
     box_area,

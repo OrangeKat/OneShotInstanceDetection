@@ -14,11 +14,11 @@ import numpy as np
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from analysis.data import OBJECT_SIZE_BINS, OBJECT_SIZE_LABELS, Row, load_rows
-from analysis.metrics import binned_hit_rates
-from analysis.plots.common import plt, save_figure
+from osid.analysis.data import OBJECT_SIZE_BINS, OBJECT_SIZE_LABELS, Row, load_rows
+from osid.analysis.metrics import binned_hit_rates
+from osid.analysis.plots.common import plt, save_figure
 
 PRETTY = {
     "sift": "SIFT",

@@ -21,17 +21,17 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from analysis.agreement import (
+from osid.analysis.agreement import (
     agreement_summary,
     hard_pair_rows,
     pair_outcomes,
 )
-from analysis.data import load_rows
-from analysis.diagnostics_report import render_diagnostics
-from analysis.metrics import per_class_metrics
-from analysis.plots import (
+from osid.analysis.data import load_rows
+from osid.analysis.diagnostics_report import render_diagnostics
+from osid.analysis.metrics import per_class_metrics
+from osid.analysis.plots import (
     plot_agreement_counts,
     plot_failure_breakdown,
     plot_hit_rate_by_gt_count,
@@ -42,9 +42,9 @@ from analysis.plots import (
     plot_per_class_heatmap,
     plot_pr_curves,
 )
-from analysis.report import render_report
-from analysis.slices import slice_metrics, stage_counts
-from analysis.tables import write_csv, write_failure_csv
+from osid.analysis.report import render_report
+from osid.analysis.slices import slice_metrics, stage_counts
+from osid.analysis.tables import write_csv, write_failure_csv
 
 
 def main(argv: Sequence[str] | None = None) -> int:

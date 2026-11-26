@@ -20,14 +20,14 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
-from benchmark.matchers.base import estimate_homography  # noqa: E402
-from benchmark.registry import MODELS  # noqa: E402
-from utils.dataset import InstanceDataset  # noqa: E402
+from osid.benchmark.matchers.base import estimate_homography  # noqa: E402
+from osid.benchmark.registry import MODELS  # noqa: E402
+from osid.utils.dataset import InstanceDataset  # noqa: E402
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

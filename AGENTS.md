@@ -33,19 +33,19 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 
 | Path | Contents |
 |---|---|
-| `main.py` | benchmark CLI entry point; delegates to `benchmark/cli.py` |
+| `main.py` | benchmark CLI entry point; delegates to `src/osid/benchmark/cli.py` |
 | `Makefile` | common setup, benchmark, validation, and analysis commands |
-| `benchmark/` | box-AP and HPatches protocols, registry, runner, reports, CLI |
-| `benchmark/matchers/` | baseline matchers: classical, LightGlue, LoFTR, RoMa, FlexGlue |
-| `benchmark/matchers/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
-| `benchmark/matchers/roma/_vendor/` | vendored RoMa inference code (MIT) |
-| `benchmark/matchers/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
-| `model/` | the model under development (week 4 onwards) |
-| `analysis/` | failure-analysis data, metrics, plots, tables, report |
-| `ui/` | local pair inspector and reference picker served by `main.py ui` |
+| `src/osid/benchmark/` | box-AP and HPatches protocols, registry, runner, reports, CLI |
+| `src/osid/benchmark/matchers/` | baseline matchers: classical, LightGlue, LoFTR, RoMa, FlexGlue |
+| `src/osid/benchmark/matchers/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
+| `src/osid/benchmark/matchers/roma/_vendor/` | vendored RoMa inference code (MIT) |
+| `src/osid/benchmark/matchers/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
+| `src/osid/model/` | the model under development (week 4 onwards) |
+| `src/osid/analysis/` | failure-analysis data, metrics, plots, tables, report |
+| `src/osid/ui/` | local pair inspector and reference picker served by `main.py ui` |
 | `configs/` | committed review state, e.g. `references.json` |
-| `benchmark/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
-| `utils/` | manifest-backed dataset, diagnostics, overlays, logging |
+| `src/osid/benchmark/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
+| `src/osid/utils/` | manifest-backed dataset, diagnostics, overlays, logging |
 | `scripts/data/prepare_flickrlogos32.py` | FlickrLogos-32 download + manifest |
 | `scripts/data/prepare_hpatches.py` | HPatches download + box-AP manifest |
 | `scripts/data/prepare_prw.py` | PRW person-search manifest |
@@ -151,9 +151,9 @@ make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
 ## Adding a model
 
 1. Implement `FeatureMatcher.match(reference, query) -> MatchResult` in
-   `benchmark/matchers/` (classical or LightGlue subpackage).
+   `src/osid/benchmark/matchers/` (classical or LightGlue subpackage).
 2. Export it from the relevant `__init__.py`.
-3. Register it in `MODELS` in `benchmark/cli.py`.
+3. Register it in `MODELS` in `src/osid/benchmark/registry.py`.
 4. Run both protocols:
 
 ```bash

@@ -5,10 +5,16 @@
 # `torch.cuda` drives a Radeon GPU out of the box. Elsewhere (CPU / CUDA /
 # Metal) stock PyPI torch is used.
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "detection"
+name = "osid"
 version = "0.1.0"
-description = "Instance detection with PyTorch on AMD GPUs (ROCm)."
+description = "One-shot instance detection: boundary-anchored matching, with a matcher benchmark."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12,<3.13"
 # Bounded to Python 3.12: AMD ships the ROCm JIT (triton-rocm) with legacy
 # `linux_x86_64` wheel tags, which `uv lock` never accepts, so we vendor a
@@ -78,6 +84,9 @@ dev = ["ruff"]
 # Local wheel dir holding the retagged AMD wheels (built by
 # scripts/prepare_rocm_wheels.py). find-links works for transitive deps,
 # unlike [tool.uv.sources], which only applies to direct dependencies.
+[tool.hatch.build.targets.wheel]
+packages = ["src/osid"]
+
 [tool.uv]
 find-links = ["vendor/pytorch-rocm"]
 
@@ -88,9 +97,9 @@ target-version = "py312"
 
 # Vendored third-party code.
 extend-exclude = [
-    "benchmark/matchers/lightglue/_vendor",
-    "benchmark/matchers/flexglue/_vendor",
-    "benchmark/matchers/roma/_vendor",
+    "src/osid/benchmark/matchers/lightglue/_vendor",
+    "src/osid/benchmark/matchers/flexglue/_vendor",
+    "src/osid/benchmark/matchers/roma/_vendor",
 ]
 
 [tool.ruff.lint]

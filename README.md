@@ -226,24 +226,31 @@ state.
 | Path | Contents |
 |---|---|
 | `main.py` | Entry point: benchmark, or `ui` for the inspector |
-| `benchmark/` | Protocols, matcher registry, runner, reports, CLI |
-| `benchmark/matchers/` | Baseline matchers and vendored code |
-| `analysis/` | Failure analysis, slices, plots, and reports |
-| `ui/` | Local pair inspector: correspondences, residuals, response maps |
-| `benchmark/validation/` | HPatches metrics and reports |
-| `utils/` | Manifest dataset, diagnostics, seeding, logging |
-| `model/` | The model under development (see its README for the contract) |
+| `src/osid/benchmark/` | Protocols, matcher registry, runner, reports, CLI |
+| `src/osid/benchmark/matchers/` | Baseline matchers and vendored code |
+| `src/osid/analysis/` | Failure analysis, slices, plots, and reports |
+| `src/osid/ui/` | Local pair inspector: correspondences, residuals, response maps |
+| `src/osid/benchmark/validation/` | HPatches metrics and reports |
+| `src/osid/utils/` | Manifest dataset, diagnostics, seeding, logging |
+| `src/osid/model/` | The model under development (see its README for the contract) |
 | `scripts/` | Grouped: `data/`, `bench/`, `analysis/`, `ui/`, `env/` |
 | `docs/devnotes/` | Weekly devlogs and the results showcase |
 | `docs/rocm-setup.md` | ROCm / WSL2 setup and troubleshooting |
 | `Makefile` | Common setup, benchmark, and analysis commands |
 
+## Where to look first
+
+- [`src/osid/benchmark/README.md`](src/osid/benchmark/README.md) — what the harness does, module by module, and where a new model plugs in.
+- [`src/osid/model/README.md`](src/osid/model/README.md) — the model under development and the interface it must satisfy.
+- [`docs/devnotes/`](docs/devnotes/) — the weekly log, including what failed and why.
+- `scripts/` — grouped by concern: `data/`, `bench/`, `analysis/`, `ui/`, `env/`.
+
 ## Adding a model
 
 1. Implement `FeatureMatcher.match(reference, query) -> MatchResult` in
-   `benchmark/matchers/`.
+   `src/osid/benchmark/matchers/`.
 2. Export it from the relevant `__init__.py`.
-3. Register it in `MODELS` in `benchmark/registry.py`.
+3. Register it in `MODELS` in `src/osid/benchmark/registry.py`.
 4. Run both protocols:
 
 ```bash
