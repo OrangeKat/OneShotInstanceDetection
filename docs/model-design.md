@@ -85,6 +85,10 @@ Phase 0 uses option 1, because it needs to run this week.
 
 ## 6. Architecture options
 
+A diagram of the implemented Stage A shape — frozen backbone, fused decoder,
+two heads, extraction, and the adapter matcher — is in
+[`src/osid/model/README.md`](../src/osid/model/README.md#architecture).
+
 **A. Boundary-aware detector and descriptor, separate matcher.** A per-image
 network that emits keypoints and descriptors, with matching left as a replaceable
 stage: ratio-tested mutual nearest neighbours first, a learned matcher later.

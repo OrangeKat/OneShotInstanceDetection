@@ -9,6 +9,75 @@ untrained, so the output is structurally correct and semantically meaningless
 until Phase 0 in [`docs/model-design.md`](../../../docs/model-design.md) says the
 premise is worth training.
 
+## Architecture
+
+One image in, keypoints and descriptors out. Matching is the dashed part: it
+belongs to `adapter.py`, not to the model.
+
+```mermaid
+flowchart TD
+    A["image<br/>448 x 448 x 3 RGB"] --> B
+
+    subgraph backbone["backbone.py — frozen DINOv3 ViT-S/16, 21.6M params"]
+        B["patch embed<br/>16 x 16"] --> C["12 transformer blocks"]
+        C --> D["tapped at blocks<br/>3, 6, 9, 11"]
+        D --> E["4 x feature maps<br/>1 x 384 x 28 x 28"]
+    end
+
+    E --> F
+
+    subgraph head["heads.py — trainable, 493k params"]
+        F["FuseDecoder<br/>1x1 project each layer, sum<br/>2x upsample twice"] --> G["fused features<br/>1 x 128 x 112 x 112"]
+        G --> H["BoundaryHead<br/>1x1 conv"]
+        G --> I["DescriptorHead<br/>1x1 conv + L2 norm"]
+        H --> J["boundary logits<br/>1 x 1 x 112 x 112"]
+        I --> K["descriptor map<br/>1 x 128 x 112 x 112"]
+    end
+
+    J --> L
+
+    subgraph pick["matcher.py — extraction, no learning"]
+        L["3x3 max-pool peak test<br/>+ threshold + top-k"] --> M["keypoints<br/>N x 2, original pixels"]
+        K --> N["gather at keypoints"]
+        M --> N
+        N --> O["Detections<br/>keypoints, scores, descriptors"]
+    end
+
+    O -. "adapter.py: mutual NN + ratio + RANSAC" .-> P["MatchResult<br/>matches, homography"]
+    P -.-> Q["benchmark registry<br/>same contract as the 8 baselines"]
+```
+
+The solid path is the model. The dotted path is what the benchmark needs and
+what you replace when you want a learned matcher instead of a geometric one.
+
+### Tensor shapes
+
+```text
+input                     H x W x 3            resized to 448 on the long side
+patch embed               h/16 x w/16          stride 16, so 28 x 28 at 448
+tapped layers (4)         28 x 28 x 384        blocks 3, 6, 9, 11
+fused (sum)               28 x 28 x 128        1x1 projections, summed
+decoder output            112 x 112 x 128      two 2x upsampling stages, stride 4
+boundary logits           112 x 112 x 1        sigmoid -> probability
+descriptor map            112 x 112 x 128      L2-normalised per cell
+keypoints                 N x 2                N <= top_k (512), original pixels
+descriptors               N x 128              gathered from the map
+```
+
+### Where each part lives
+
+| Stage | File | Function or class |
+|---|---|---|
+| resize, normalise, patch embed, blocks | `backbone.py` | `Dinov3Backbone.forward`, `_prepare` |
+| layer fusion and upsampling | `heads.py` | `FuseDecoder.forward` |
+| boundary logits | `heads.py` | `BoundaryHead.forward` |
+| descriptors | `heads.py` | `DescriptorHead.forward` |
+| peak test, threshold, top-k | `matcher.py` | `extract_keypoints` |
+| detection set | `detector.py` | `DetectorDescriptor.detect` → `Detections` |
+| matching for the benchmark | `adapter.py` | `BenchmarkAdapter.match`, `match_detections` |
+| matching rules | `matcher.py` | `match_descriptors` |
+| knobs | `config.py` | `ModelConfig` |
+
 ## Reading order
 
 | File | What it does | Where to change things |
