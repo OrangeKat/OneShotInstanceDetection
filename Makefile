@@ -105,9 +105,6 @@ analyze: ## Generate failure-analysis plots and report
 ui: ## Serve the pair inspector (ARGS="--port 8765 --models sift roma")
 	$(PYTHON) main.py ui $(ARGS)
 
-taxonomy: ## Classify failures into the taxonomy (ARGS="--results ...")
-	$(PYTHON) scripts/taxonomy.py $(ARGS)
-
 check-refs: ## Verify chosen reference crops reached the manifest
 	$(PYTHON) scripts/check_references.py $(ARGS)
 
