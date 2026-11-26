@@ -19,7 +19,6 @@ premise is worth training.
 | `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned |
 | `matcher.py` | matching utilities: mutual NN, ratio test | matching rules, when you want them shared |
 | `adapter.py` | benchmark adapter: detect both images, then match | the matcher used for benchmarking, homography settings |
-| `hub.py` | save/load and Hugging Face upload of the trained heads | staging, repo naming |
 | `__main__.py` | run one image and write an overlay | the quickest way to see the model work |
 
 ## Run it

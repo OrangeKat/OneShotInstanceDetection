@@ -8,7 +8,6 @@ The model is per-image: one image in, keypoints and descriptors out.
 - ``detector.py``  the model: ``detect(image) -> Detections``
 - ``matcher.py``   matching utilities (mutual NN, ratio test)
 - ``adapter.py``   benchmark adapter: detector on both images plus a matcher
-- ``hub.py``       save/load and Hugging Face upload of the trained heads
 """
 
 from osid.model.adapter import BenchmarkAdapter

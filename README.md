@@ -238,10 +238,6 @@ state.
 | `docs/rocm-setup.md` | ROCm / WSL2 setup and troubleshooting |
 | `Makefile` | Common setup, benchmark, and analysis commands |
 
-## Publishing
-
-The code is installable from the repository (`pip install "osid @ git+https://github.com/OrangeKat/OneShotInstanceDetection"`); the weights will live on the Hugging Face Hub rather than PyPI. See [`docs/huggingface.md`](docs/huggingface.md) for the upload path and the model-card template.
-
 ## Where to look first
 
 - [`src/osid/benchmark/README.md`](src/osid/benchmark/README.md) — what the harness does, module by module, and where a new model plugs in.

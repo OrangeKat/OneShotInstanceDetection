@@ -21,15 +21,23 @@ class FuseDecoder(nn.Module):
         out_dim: Channel count of the fused feature map.
     """
 
-    def __init__(self, hidden_dim: int, out_dim: int) -> None:
+    def __init__(
+        self, hidden_dim: int, out_dim: int, in_dim: int | None = None
+    ) -> None:
         """Build the decoder.
 
         Args:
             hidden_dim: Width of the fused feature map.
             out_dim: Width handed to the heads.
+            in_dim: Channel count of the backbone layers. Built eagerly when
+                known so a saved state dict loads without a forward pass.
         """
         super().__init__()
-        self.projections = nn.ModuleList()
+        self.projections = (
+            nn.ModuleList(nn.Conv2d(in_dim, hidden_dim, 1) for _ in range(4))
+            if in_dim is not None
+            else nn.ModuleList()
+        )
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
         self.fuse = nn.Sequential(

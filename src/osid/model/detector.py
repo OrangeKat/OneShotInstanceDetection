@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from torch import nn
 
 from osid.model.backbone import BackboneFeatures, Dinov3Backbone
 from osid.model.config import ModelConfig
@@ -43,12 +44,16 @@ class Detections:
         return int(len(self.keypoints))
 
 
-class DetectorDescriptor:
+class DetectorDescriptor(nn.Module):
     """Boundary-aware keypoint detector with descriptors.
 
     Frozen DINOv3 features → fusion decoder → boundary and descriptor heads →
     local maxima of the boundary map. No second image is involved, so the
     output can be cached per image and reused by any matcher.
+
+    Being a module means the trainable parts are reachable with
+    ``parameters()``, and ``train()``/``eval()`` behave as expected. The
+    backbone stays in eval mode regardless, since it is frozen.
 
     Attributes:
         name: Identifier used in reports.
@@ -72,6 +77,7 @@ class DetectorDescriptor:
             device: ``cuda``, ``cpu``, or ``None`` for automatic selection.
             max_keypoints: Overrides ``config.top_k`` when given.
         """
+        super().__init__()
         self.config = config or ModelConfig()
         if max_keypoints is not None:
             self.config = ModelConfig(
@@ -81,16 +87,18 @@ class DetectorDescriptor:
             device or ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.backbone = Dinov3Backbone(self.config, self.device)
-        self.decoder = FuseDecoder(self.config.hidden_dim, self.config.out_dim).to(
-            self.device
-        )
+        self.decoder = FuseDecoder(
+            self.config.hidden_dim,
+            self.config.out_dim,
+            in_dim=int(self.backbone.model.embed_dim),
+        ).to(self.device)
         self.boundary = BoundaryHead(self.config.out_dim).to(self.device)
         self.descriptor = DescriptorHead(
             self.config.out_dim,
             self.config.descriptor_dim,
         ).to(self.device)
 
-    def detect(self, image: np.ndarray) -> Detections:
+    def forward(self, image: np.ndarray) -> Detections:
         """Detect keypoints and describe them.
 
         Args:
@@ -99,8 +107,34 @@ class DetectorDescriptor:
         Returns:
             Keypoints, boundary scores, and descriptors.
         """
-        features = self.backbone(image)
-        return self._predict(features)
+        return self._predict(self.backbone(image))
+
+    def detect(self, image: np.ndarray) -> Detections:
+        """Detect keypoints and describe them.
+
+        Alias for :meth:`forward`, for call sites that read better as
+        detection than as a forward pass.
+
+        Args:
+            image: ``(H, W, 3)`` uint8 RGB image.
+
+        Returns:
+            Keypoints, boundary scores, and descriptors.
+        """
+        return self.forward(image)
+
+    def train(self, mode: bool = True) -> DetectorDescriptor:
+        """Set training mode, keeping the frozen backbone in eval.
+
+        Args:
+            mode: Whether the heads should train.
+
+        Returns:
+            The model.
+        """
+        super().train(mode)
+        self.backbone.model.eval()
+        return self
 
     def _predict(self, features: BackboneFeatures) -> Detections:
         """Run the heads and select keypoints.
