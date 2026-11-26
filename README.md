@@ -232,7 +232,7 @@ state.
 | `ui/` | Local pair inspector: correspondences, residuals, response maps |
 | `benchmark/validation/` | HPatches metrics and reports |
 | `utils/` | Manifest dataset, diagnostics, seeding, logging |
-| `model/` | The model under development |
+| `model/` | The model under development (see its README for the contract) |
 | `scripts/` | Grouped: `data/`, `bench/`, `analysis/`, `ui/`, `env/` |
 | `docs/devnotes/` | Weekly devlogs and the results showcase |
 | `docs/rocm-setup.md` | ROCm / WSL2 setup and troubleshooting |
