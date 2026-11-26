@@ -33,35 +33,35 @@ One devlog per week, kept in `docs/devnotes/` and summarized on LinkedIn.
 
 | Path | Contents |
 |---|---|
-| `main.py` | benchmark CLI entry point; delegates to `src/pipeline.py` |
+| `main.py` | benchmark CLI entry point; delegates to `benchmark/cli.py` |
 | `Makefile` | common setup, benchmark, validation, and analysis commands |
-| `src/pipeline.py` | box-AP and HPatches protocols, model registry, reports |
-| `src/models/feature_matching/` | classical, LightGlue, LoFTR, RoMa, FlexGlue matchers |
-| `src/models/feature_matching/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
-| `src/models/feature_matching/roma/_vendor/` | vendored RoMa inference code (MIT) |
-| `src/models/feature_matching/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
-| `src/analysis/` | failure-analysis data, metrics, plots, tables, report |
-| `src/ui/` | local pair inspector and reference picker served by `main.py ui` |
+| `benchmark/` | box-AP and HPatches protocols, registry, runner, reports, CLI |
+| `benchmark/matchers/` | baseline matchers: classical, LightGlue, LoFTR, RoMa, FlexGlue |
+| `benchmark/matchers/lightglue/_vendor/` | vendored LightGlue components (Apache 2.0) |
+| `benchmark/matchers/roma/_vendor/` | vendored RoMa inference code (MIT) |
+| `benchmark/matchers/flexglue/_vendor/` | vendored FlexGlue inference code (MIT) |
+| `model/` | the model under development (week 4 onwards) |
+| `analysis/` | failure-analysis data, metrics, plots, tables, report |
+| `ui/` | local pair inspector and reference picker served by `main.py ui` |
 | `configs/` | committed review state, e.g. `references.json` |
-| `src/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
-| `src/utils/dataset.py` | manifest-backed reference/query dataset |
-| `src/utils/logger.py` | stderr logger |
-| `scripts/prepare_flickrlogos32.py` | FlickrLogos-32 download + manifest |
-| `scripts/prepare_hpatches.py` | HPatches download + box-AP manifest |
-| `scripts/prepare_prw.py` | PRW person-search manifest |
-| `scripts/prepare_rpc.py` | RPC category-level manifest |
-| `scripts/visualize_examples.py` | good/bad/false-positive prediction images |
-| `scripts/diagnose.py` | single-pair overlay, stage, stability, and oracles |
-| `scripts/visualize_matches.py` | match-overlay gallery from a result file |
-| `scripts/compare_datasets.py` | model × dataset result matrix |
-| `scripts/sweep.py` | one-factor keypoints/RANSAC/size/ratio sweeps |
-| `scripts/aggregate_runs.py` | mean/std over repeated runs |
-| `scripts/run_all.py` | bench-all orchestration across datasets |
-| `scripts/plot_dataset_summary.py` | per-dataset devlog figures |
-| `scripts/plot_prw_analysis.py` | PRW complexity figures |
-| `scripts/analyze_results.py` | failure-analysis plots, CSVs, and report |
-| `scripts/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
-| `scripts/gpu_check.py` | ROCm / CUDA / device diagnostics |
+| `benchmark/validation/` | HPatches sequence loading, MMA/HEA/corner-error metrics |
+| `utils/` | manifest-backed dataset, diagnostics, overlays, logging |
+| `scripts/data/prepare_flickrlogos32.py` | FlickrLogos-32 download + manifest |
+| `scripts/data/prepare_hpatches.py` | HPatches download + box-AP manifest |
+| `scripts/data/prepare_prw.py` | PRW person-search manifest |
+| `scripts/data/prepare_rpc.py` | RPC category-level manifest |
+| `scripts/analysis/visualize_examples.py` | good/bad/false-positive prediction images |
+| `scripts/analysis/diagnose.py` | single-pair overlay, stage, stability, and oracles |
+| `scripts/analysis/visualize_matches.py` | match-overlay gallery from a result file |
+| `scripts/bench/compare_datasets.py` | model × dataset result matrix |
+| `scripts/bench/sweep.py` | one-factor keypoints/RANSAC/size/ratio sweeps |
+| `scripts/bench/aggregate_runs.py` | mean/std over repeated runs |
+| `scripts/bench/run_all.py` | bench-all orchestration across datasets |
+| `scripts/analysis/plot_dataset_summary.py` | per-dataset devlog figures |
+| `scripts/analysis/plot_prw_analysis.py` | PRW complexity figures |
+| `scripts/analysis/analyze_results.py` | failure-analysis plots, CSVs, and report |
+| `scripts/env/prepare_rocm_wheels.py` | vendor/retag AMD ROCm wheels for `uv lock` |
+| `scripts/env/gpu_check.py` | ROCm / CUDA / device diagnostics |
 | `docs/devnotes/` | weekly devlogs and devlog index |
 | `docs/rocm-setup.md` | ROCm / WSL2 setup guide |
 | `data/` | datasets (gitignored) |
@@ -85,7 +85,7 @@ make gpu
 - `--ratio` applies to classical matchers; LightGlue uses `filter_threshold=0.1`.
 - RoMa and FlexGlue use vendored inference code and download official weights on
   first use. LoFTR uses Kornia's outdoor weights.
-- On WSL2, run `bash scripts/setup_wsl_rocm.sh` first.
+- On WSL2, run `bash scripts/env/setup_wsl_rocm.sh` first.
 
 ## Benchmarks
 
@@ -146,14 +146,14 @@ make sweep ARGS="--keypoints 512 1024 --ransac 1 3 5"
   stage/slice CSVs, `pair_agreement.csv`, `hard_pairs.csv`, and plots.
 - The benchmark records per-sample stage, inlier ratio, coverage,
   reprojection error, homography validity, and model parameters. Repeated runs
-  can be aggregated with `scripts/aggregate_runs.py`.
+  can be aggregated with `scripts/bench/aggregate_runs.py`.
 
 ## Adding a model
 
 1. Implement `FeatureMatcher.match(reference, query) -> MatchResult` in
-   `src/models/feature_matching/` (classical or LightGlue subpackage).
+   `benchmark/matchers/` (classical or LightGlue subpackage).
 2. Export it from the relevant `__init__.py`.
-3. Register it in `MODELS` in `src/pipeline.py`.
+3. Register it in `MODELS` in `benchmark/cli.py`.
 4. Run both protocols:
 
 ```bash

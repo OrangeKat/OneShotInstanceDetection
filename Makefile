@@ -34,7 +34,7 @@ help: ## Show available targets
 	@echo "  make tag-week WEEK=2"
 
 rocm-wheels: ## Vendor and retag AMD ROCm wheels (once on a fresh clone)
-	python3 scripts/prepare_rocm_wheels.py
+	python3 scripts/env/prepare_rocm_wheels.py
 
 sync: ## Lock and sync all dependency groups
 	uv lock
@@ -51,19 +51,19 @@ check: ## Check linting and formatting without modifying files
 	$(RUFF) format --check .
 
 gpu: ## Run the ROCm / GPU diagnostics
-	$(PYTHON) scripts/gpu_check.py
+	$(PYTHON) scripts/env/gpu_check.py
 
 data-flickr: ## Download FlickrLogos-32 and build the manifest
-	$(PYTHON) scripts/prepare_flickrlogos32.py
+	$(PYTHON) scripts/data/prepare_flickrlogos32.py
 
 data-hpatches: ## Download HPatches and build the manifest
-	$(PYTHON) scripts/prepare_hpatches.py
+	$(PYTHON) scripts/data/prepare_hpatches.py
 
 data-prw: ## Build the PRW person-search manifest (data must be downloaded)
-	$(PYTHON) scripts/prepare_prw.py
+	$(PYTHON) scripts/data/prepare_prw.py
 
 data-rpc: ## Download RPC shards and build the category-level manifest
-	$(PYTHON) scripts/prepare_rpc.py
+	$(PYTHON) scripts/data/prepare_rpc.py
 
 bench: ## Run the FlickrLogos-32 box benchmark
 	$(PYTHON) main.py \
@@ -91,13 +91,13 @@ hpatches: ## Run HPatches matcher validation
 		--output $(HPATCHES_OUTPUT)
 
 bench-all: ## Run every available dataset sequentially
-	$(PYTHON) scripts/run_all.py --models $(MODELS) $(ARGS)
+	$(PYTHON) scripts/bench/run_all.py --models $(MODELS) $(ARGS)
 
 examples: ## Render good, bad, and false-positive examples
-	$(PYTHON) scripts/visualize_examples.py
+	$(PYTHON) scripts/analysis/visualize_examples.py
 
 analyze: ## Generate failure-analysis plots and report
-	$(PYTHON) scripts/analyze_results.py \
+	$(PYTHON) scripts/analysis/analyze_results.py \
 		--manifest $(ANALYZE_MANIFEST) \
 		--results $(ANALYZE_RESULTS) \
 		--output $(ANALYZE_OUTPUT) $(ARGS)
@@ -106,29 +106,29 @@ ui: ## Serve the pair inspector (ARGS="--port 8765 --models sift roma")
 	$(PYTHON) main.py ui $(ARGS)
 
 check-refs: ## Verify chosen reference crops reached the manifest
-	$(PYTHON) scripts/check_references.py $(ARGS)
+	$(PYTHON) scripts/ui/check_references.py $(ARGS)
 
 ui-smoke: ## Browser-check the inspector against a running UI (ARGS="--url ...")
-	uv run --with playwright $(PYTHON) scripts/ui_smoke.py $(ARGS)
+	uv run --with playwright $(PYTHON) scripts/ui/ui_smoke.py $(ARGS)
 
 diagnose: ## Diagnose one pair (MODEL=sift INDEX=0 ARGS="--seeds 5 --oracle")
-	$(PYTHON) scripts/diagnose.py --model $(MODEL) --index $(INDEX) $(ARGS)
+	$(PYTHON) scripts/analysis/diagnose.py --model $(MODEL) --index $(INDEX) $(ARGS)
 
 compare: ## Compare models across dataset result files
-	$(PYTHON) scripts/compare_datasets.py $(ARGS)
+	$(PYTHON) scripts/bench/compare_datasets.py $(ARGS)
 
 sweep: ## Run a sensitivity sweep (ARGS="--keypoints 512 1024")
-	$(PYTHON) scripts/sweep.py $(ARGS)
+	$(PYTHON) scripts/bench/sweep.py $(ARGS)
 
 matches: ## Render match overlays from a result file
-	$(PYTHON) scripts/visualize_matches.py \
+	$(PYTHON) scripts/analysis/visualize_matches.py \
 		--manifest $(ANALYZE_MANIFEST) \
 		--results $(ANALYZE_RESULTS) \
 		--output $(ANALYZE_OUTPUT)/matches $(ARGS)
 
 figures: ## Regenerate the per-dataset devlog figures
-	$(PYTHON) scripts/plot_dataset_summary.py
-	$(PYTHON) scripts/plot_prw_analysis.py
+	$(PYTHON) scripts/analysis/plot_dataset_summary.py
+	$(PYTHON) scripts/analysis/plot_prw_analysis.py
 
 all: check bench hpatches examples analyze ## Run checks and both benchmarks
 

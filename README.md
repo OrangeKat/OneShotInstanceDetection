@@ -53,7 +53,7 @@ make bench-all                 # every dataset whose data is present
 make bench-all MODELS="sift"   # quick pass
 ```
 
-On WSL2, run `bash scripts/setup_wsl_rocm.sh` first. CUDA, CPU, and macOS setup
+On WSL2, run `bash scripts/env/setup_wsl_rocm.sh` first. CUDA, CPU, and macOS setup
 is covered in [`docs/rocm-setup.md`](docs/rocm-setup.md).
 
 ## Results
@@ -225,14 +225,15 @@ state.
 
 | Path | Contents |
 |---|---|
-| `main.py` | Benchmark CLI entry point |
-| `src/pipeline.py` | Box and HPatches protocols; model registry |
-| `src/models/feature_matching/` | Matcher implementations and vendored code |
-| `src/analysis/` | Failure analysis, slices, plots, and reports |
-| `src/ui/` | Local pair inspector: correspondences, residuals, response maps |
-| `src/validation/` | HPatches metrics and reports |
-| `src/utils/` | Manifest dataset, diagnostics, seeding, logging |
-| `scripts/` | Dataset preparation, analysis, sweeps, figures |
+| `main.py` | Entry point: benchmark, or `ui` for the inspector |
+| `benchmark/` | Protocols, matcher registry, runner, reports, CLI |
+| `benchmark/matchers/` | Baseline matchers and vendored code |
+| `analysis/` | Failure analysis, slices, plots, and reports |
+| `ui/` | Local pair inspector: correspondences, residuals, response maps |
+| `benchmark/validation/` | HPatches metrics and reports |
+| `utils/` | Manifest dataset, diagnostics, seeding, logging |
+| `model/` | The model under development |
+| `scripts/` | Grouped: `data/`, `bench/`, `analysis/`, `ui/`, `env/` |
 | `docs/devnotes/` | Weekly devlogs and the results showcase |
 | `docs/rocm-setup.md` | ROCm / WSL2 setup and troubleshooting |
 | `Makefile` | Common setup, benchmark, and analysis commands |
@@ -240,9 +241,9 @@ state.
 ## Adding a model
 
 1. Implement `FeatureMatcher.match(reference, query) -> MatchResult` in
-   `src/models/feature_matching/`.
+   `benchmark/matchers/`.
 2. Export it from the relevant `__init__.py`.
-3. Register it in `MODELS` in `src/pipeline.py`.
+3. Register it in `MODELS` in `benchmark/registry.py`.
 4. Run both protocols:
 
 ```bash

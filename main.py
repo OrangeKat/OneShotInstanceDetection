@@ -7,7 +7,7 @@ Usage:
         --models sift orb akaze --output outputs/hpatches
     uv run python main.py ui --port 8765
 
-The benchmark implementation lives in :mod:`src.pipeline`; the inspector UI in
+The benchmark implementation lives in :mod:`benchmark.cli`; the inspector UI in
 :mod:`src.ui`.
 """
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sys
 
-from src.pipeline import main as run_benchmark
+from benchmark.cli import main as run_benchmark
 
 UI_COMMANDS = {"ui", "serve"}
 
@@ -28,7 +28,7 @@ def main() -> int:
     """
     argv = sys.argv[1:]
     if argv and argv[0] in UI_COMMANDS:
-        from src.ui.cli import main as run_ui
+        from ui.cli import main as run_ui
 
         return run_ui(argv[1:])
     return run_benchmark()
