@@ -16,6 +16,9 @@ class ModelConfig:
         pretrained: Load published weights instead of random initialisation.
         input_size: Long side the images are resized to before the backbone.
         decoder_stride: Pixels per descriptor cell; 2 is finer than 4.
+        descriptor_mode: ``learned`` for the trained head, ``dinov3`` for frozen
+            backbone tokens. The latter is contextual rather than local, which
+            matters on flat regions where a 1x1 head has nothing to separate.
         layers: Transformer blocks tapped for features, in depth order.
         hidden_dim: Width of the fused multi-layer feature map.
         out_dim: Width handed to the two heads.
@@ -34,6 +37,7 @@ class ModelConfig:
     hidden_dim: int = 128
     out_dim: int = 128
     descriptor_dim: int = 128
+    descriptor_mode: str = "learned"
     top_k: int = 512
     boundary_threshold: float = 0.3
     ratio: float = 0.9

@@ -85,7 +85,7 @@ descriptors               N x 128              gathered from the map
 | `config.py` | every knob, in one dataclass | backbone name, input size, tapped layers, widths, top-k, thresholds |
 | `backbone.py` | frozen DINOv3 ViT-S/16, multi-layer features, resize + normalise, feature→pixel mapping | swap the backbone, change which blocks are tapped |
 | `heads.py` | fusion decoder to stride 4, boundary head, descriptor head | decoder depth, widths, head design |
-| `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned |
+| `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned; `descriptor_mode` switches between the trained head and frozen DINOv3 tokens |
 | `losses.py` | boundary heatmap target + focal loss, descriptor InfoNCE | loss design, temperatures, symmetry handling |
 | `train.py` | training loop on synthetic shapes, validation, checkpoints | batch construction, optimiser, logging |
 | `matcher.py` | matching utilities: mutual NN, ratio test | matching rules, when you want them shared |

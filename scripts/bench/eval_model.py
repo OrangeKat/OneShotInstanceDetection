@@ -51,6 +51,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--baselines", nargs="*", default=["sift"])
     parser.add_argument("--matching", choices=("mutual", "many"), default="mutual")
+    parser.add_argument(
+        "--descriptor-mode",
+        choices=("learned", "dinov3"),
+        default="learned",
+        help="Use the trained head or frozen backbone tokens as descriptors.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default=None)
     parser.add_argument(
@@ -90,7 +96,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     adapter = BenchmarkAdapter(
-        load_checkpoint(args.checkpoint, device=args.device),
+        load_checkpoint(
+            args.checkpoint,
+            device=args.device,
+            overrides={"descriptor_mode": args.descriptor_mode},
+        ),
         matching=args.matching,
     )
     reports = {

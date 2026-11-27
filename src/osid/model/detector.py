@@ -138,9 +138,45 @@ class DetectorDescriptor(nn.Module):
         Returns:
             ``(1, 1, h, w)`` boundary logits and ``(1, D, h, w)`` descriptors.
         """
-        features = self.backbone(image)
+        return self._heads(self.backbone(image))
+
+    def _heads(self, features: BackboneFeatures) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run the decoder and heads on precomputed features.
+
+        Args:
+            features: Backbone features for one image.
+
+        Returns:
+            ``(1, 1, h, w)`` boundary logits and ``(1, D, h, w)`` descriptors.
+        """
         fused = self.decoder(features.layers)
-        return self.boundary(fused), self.descriptor(fused)
+        logits = self.boundary(fused)
+        if self.config.descriptor_mode == "dinov3":
+            return logits, self._backbone_descriptors(features.layers[-1], logits)
+        return logits, self.descriptor(fused)
+
+    @staticmethod
+    def _backbone_descriptors(
+        tokens: torch.Tensor,
+        reference: torch.Tensor,
+    ) -> torch.Tensor:
+        """Turn patch tokens into descriptors at the prediction resolution.
+
+        Args:
+            tokens: ``(1, C, h, w)`` backbone feature map.
+            reference: Tensor whose spatial size the descriptors must match.
+
+        Returns:
+            ``(1, C, H, W)`` centred, unit-length descriptors.
+        """
+        descriptors = torch.nn.functional.interpolate(
+            tokens,
+            size=reference.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+        descriptors = descriptors - descriptors.mean(dim=(2, 3), keepdim=True)
+        return torch.nn.functional.normalize(descriptors, dim=1)
 
     def detect(self, image: np.ndarray) -> Detections:
         """Detect keypoints and describe them.
@@ -178,9 +214,7 @@ class DetectorDescriptor(nn.Module):
         Returns:
             Detections in original image coordinates.
         """
-        fused = self.decoder(features.layers)
-        boundary_logits = self.boundary(fused)
-        descriptor_map = self.descriptor(fused)
+        boundary_logits, descriptor_map = self._heads(features)
         points, scores = extract_keypoints(
             boundary_logits,
             threshold=self.config.boundary_threshold,

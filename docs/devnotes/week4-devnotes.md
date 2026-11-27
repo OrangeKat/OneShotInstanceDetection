@@ -253,6 +253,39 @@ The first is a generator change and the cheaper experiment; the second is a
 model change. Either is a better use of the next training session than another
 1,000 steps of the current setup.
 
+## Frozen DINOv3 tokens as descriptors
+
+Given that DINOv3 embeddings had worked well on another project, the descriptor
+head was swapped for frozen backbone tokens: last-block patch tokens, bilinearly
+upsampled to the prediction grid, centred, L2-normalised, with no descriptor head
+and no descriptor loss.
+
+| Test | Result |
+|---|---|
+| Synthetic top-1 at true correspondences (256 points) | 0.011 (chance 0.004) |
+| Real pairs, mutual NN + ratio | 0.000 hit, 0 matches |
+| Real pairs, many-to-many + RANSAC | 0.000 hit, degenerate homography on 48% |
+| Best/second similarity margin, 448 px | 1.006 |
+| Same margin at 896 px | 1.003 |
+| Within-image cosine, real pair | 0.994 mean, 0.999 p90 |
+
+Doubling the resolution did not help, so the ambiguity is not spatial. At 1/16
+patch resolution, many keypoints share or nearly share a token, and after
+centering the remaining variation is small compared with the noise: the best
+match is barely better than the second best, which is exactly what the ratio
+test rejects.
+
+As a global verifier the same backbone is also weak: CLS cosine similarity
+separates positives from negatives at AUC 0.646 on 225 pairs (positives 0.618,
+negatives 0.568).
+
+Conclusion: raw DINOv3 features are not usable as per-pixel descriptors or as a
+zero-shot verifier here. The two standard ways to use them are a learned
+projection trained contrastively on top of the frozen features, or a learned
+matcher over the token grid (which is what RoMa does with DINOv2 and a matching
+head). Either keeps the backbone frozen and trains something small, which is a
+better bet than either the 1x1 head or raw tokens.
+
 ## Phase 0 (not started)
 
 - Pseudo-masks from the reference boxes, then measure where current keypoints
