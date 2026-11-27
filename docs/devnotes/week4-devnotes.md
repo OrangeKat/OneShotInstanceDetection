@@ -79,6 +79,59 @@ runs; the write-up follows once the work is finished.
   backbone stride (16) instead of the decoder stride (4), so every point landed
   outside the image.
 
+## First training run and evaluation
+
+Trained 2,000 steps, batch 1, 128 boundary points, 448 px, frozen ViT-S:
+493k trainable parameters, about 0.15 s per step.
+
+![Training curves and the real-data comparison](images/week4/model_eval.png)
+
+### Synthetic data
+
+| step | boundary loss | descriptor loss | precision | recall |
+|---:|---:|---:|---:|---:|
+| 1 | 33.1 | 7.75 | 0.05 | 0.07 |
+| 200 | 1.06 | 5.24 | 0.90 | 0.45 |
+| 1000 | 0.42 | 4.59 | 0.93 | 0.60 |
+| 2000 | 0.22 | 4.35 | 0.96 | 0.62 |
+
+The chance floor for the descriptor loss at 128 points is ln(128) = 4.85, so the
+descriptor ended only 0.5 below chance.
+
+Descriptor top-1 accuracy at the true corresponding points: **0.047** (0.082
+when ambiguous negatives are excluded). Essentially chance.
+
+### Real data
+
+FlickrLogos-32, 150 positives and 75 negatives sampled from the manifest:
+
+| model | hit | AP@0.5 | mean IoU | mean matches | mean inliers |
+|---|---:|---:|---:|---:|---:|
+| osid_boundary | 0.000 | 0.000 | 0.000 | 0.1 | 0.0 |
+| SIFT | 0.413 | 0.377 | 0.375 | 20.7 | 10.1 |
+
+Stages: `no_matches` 146 (65%), `true_negative` 75 (33%), `too_few_matches` 4
+(2%). The failure is not a wrong box; matching produces almost nothing.
+
+### Diagnosis
+
+The detector works: 238 keypoints on a reference crop, 151 on a query, and
+boundary precision 0.96 on synthetic. The descriptor is the bottleneck.
+Descriptors at different boundary points are nearly identical — within-image
+p90 cosine 0.96, cross-view best 0.980 against a runner-up of 0.979 (margin
+1.01) — so mutual nearest neighbour plus a ratio test rejects everything.
+
+The cause is resolution and signal, not training length: a stride-4 descriptor
+summarises a 4 px neighbourhood that looks the same at adjacent keypoints along
+an edge, and a 1×1 head over DINOv3 features has no positional cue to separate
+them. InfoNCE is then asked to distinguish points that are genuinely
+indistinguishable at that scale.
+
+Candidate fixes, cheapest first: pick keypoints at high curvature rather than
+uniformly along the boundary; raise the descriptor to stride 2; add a projection
+head with per-image centering; and relax the matcher to many-to-many plus
+RANSAC, which would show whether any signal exists before retraining.
+
 ## Phase 0 (not started)
 
 - Pseudo-masks from the reference boxes, then measure where current keypoints
