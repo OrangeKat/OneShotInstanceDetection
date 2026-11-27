@@ -59,6 +59,8 @@ runs; the write-up follows once the work is finished.
   homography. Alignment check reports mask IoU 0.990 mean / 0.982 min, so the
   correspondence labels are sound.
 
+![Synthetic training pairs: the same object crop pasted into two different backgrounds, with the silhouette outlined and an occluder on the second row](images/week4/synthetic_examples.png)
+
 ## Phase 0 (not started)
 
 - Pseudo-masks from the reference boxes, then measure where current keypoints
