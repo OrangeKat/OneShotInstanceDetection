@@ -43,6 +43,22 @@ runs; the write-up follows once the work is finished.
   match rate, reported alongside hit rate so a gain cannot come from something
   other than the stated idea.
 
+## Model scaffold
+
+- Adopted the `src/` layout and packaged the project as `osid`, so the model
+  sits next to the benchmark it will be measured against.
+- Built a per-image detector and descriptor: frozen DINOv3 ViT-S/16 backbone
+  tapped at four layers, a fusion decoder to stride 4, a boundary head and a
+  descriptor head, and local-maxima keypoint selection. Matching is a separate
+  stage (`adapter.py`) so detection can be measured and cached on its own.
+- 493k trainable parameters; the backbone stays frozen and in eval mode.
+- Documented the architecture with a diagram and a stage → file table.
+- Built the synthetic data generator: an object crop pasted into two different
+  backgrounds with independent scale, rotation and perspective, then degraded
+  with brightness, blur, noise and JPEG, returning masks and the exact
+  homography. Alignment check reports mask IoU 0.990 mean / 0.982 min, so the
+  correspondence labels are sound.
+
 ## Phase 0 (not started)
 
 - Pseudo-masks from the reference boxes, then measure where current keypoints

@@ -88,6 +88,7 @@ descriptors               N x 128              gathered from the map
 | `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned |
 | `matcher.py` | matching utilities: mutual NN, ratio test | matching rules, when you want them shared |
 | `adapter.py` | benchmark adapter: detect both images, then match | the matcher used for benchmarking, homography settings |
+| `synth.py` | synthetic pairs: object pasted into two backgrounds, with masks and an exact homography | placement, degradation, occlusion, backgrounds |
 | `__main__.py` | run one image and write an overlay | the quickest way to see the model work |
 
 ## Run it
@@ -100,6 +101,28 @@ uv run python -m osid.model --image photo.jpg --top-k 256
 
 It prints keypoint and descriptor statistics and writes `outputs/model-demo.png`
 with points sized and coloured by boundary score.
+
+## Synthetic data
+
+`synth.py` produces training pairs without labels from the benchmark: one
+reference crop is pasted into two different backgrounds with independent
+scale, rotation, and mild perspective, then degraded with brightness, blur,
+noise, and JPEG. The paste transform is known, so the homography *is* the
+correspondence label, and the object silhouette gives the boundary target.
+
+```bash
+uv run python -m osid.model.synth --samples 12            # contact sheet
+uv run python -m osid.model.synth --samples 20 --check    # label sanity
+```
+
+`--check` warps view A's mask through the generated homography and compares it
+with view B's mask. It reports mean 0.990 and min 0.982 across 20 samples, which
+is resampling error rather than label error. Occlusion is disabled for that
+check, since the two views occlude different regions.
+
+Known limitation: the silhouette is the crop rectangle, because the datasets
+have boxes rather than masks. That teaches the model to find rectangular
+patches; a silhouette (GrabCut or a segmentation model) is the next refinement.
 
 ## Why per-image
 
