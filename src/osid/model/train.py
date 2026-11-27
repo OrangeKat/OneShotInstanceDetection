@@ -412,6 +412,7 @@ def _evaluate(
         "descriptor": float(np.mean(descriptors)),
         "top1": float(np.mean(top1)),
         "chance": 1.0 / max(args.points, 1),
+        "log_chance": float(np.log(args.points + generator.negative_points)),
         "ignored": float(np.mean(ignored)),
         "precision": precision,
         "recall": recall,

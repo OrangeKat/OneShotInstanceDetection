@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -49,7 +50,10 @@ def main() -> int:
         ms=3,
         label="descriptor loss",
     )
-    curves.axhline(np.log(128), ls="--", lw=1, color="#888", label="chance (ln 128)")
+    floor = history[-1].get("log_chance", np.log(128))
+    curves.axhline(
+        floor, ls="--", lw=1, color="#888", label=f"chance (ln {math.exp(floor):.0f})"
+    )
     curves.set_xlabel("step")
     curves.set_ylabel("loss")
     curves.set_yscale("log")
