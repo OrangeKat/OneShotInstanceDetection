@@ -31,17 +31,24 @@ class BackboneFeatures:
     resized: tuple[int, int]
     original: tuple[int, int]
 
-    def to_original(self, points: np.ndarray) -> np.ndarray:
-        """Map feature-cell coordinates to original image pixels.
+    def to_original(
+        self,
+        points: np.ndarray,
+        grid_stride: int = 4,
+    ) -> np.ndarray:
+        """Map grid coordinates to original image pixels.
 
         Args:
-            points: ``(N, 2)`` coordinates in feature cells.
+            points: ``(N, 2)`` coordinates in grid cells.
+            grid_stride: Pixels per grid cell in the resized image. Defaults to
+                the decoder stride, which is what the heads predict at; pass
+                ``self.stride`` for raw backbone cells.
 
         Returns:
             ``(N, 2)`` coordinates in the original image.
         """
-        scale_x = self.original[0] / (self.resized[0] / self.stride)
-        scale_y = self.original[1] / (self.resized[1] / self.stride)
+        scale_x = self.original[0] / (self.resized[0] / grid_stride)
+        scale_y = self.original[1] / (self.resized[1] / grid_stride)
         return points * np.array([scale_x, scale_y], dtype=np.float32)
 
 

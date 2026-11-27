@@ -72,6 +72,12 @@ runs; the write-up follows once the work is finished.
   range, `heads.pt` and `history.json` in `outputs/train/`, and `make train`.
 - First 60 steps: heatmap loss 182.8 -> 1.1, validation precision 0.72, recall
   0.35; descriptor loss 6.59 -> 4.69 against an ln 128 = 4.85 chance floor.
+- Loaded those 60 steps of synthetic training and ran the detector on a real
+  Flickr query: the boundary peaks land on the logo edges, not on the
+  background. First evidence that the boundary prior transfers off polygons.
+- Fixed a coordinate bug found by that test: keypoints were scaled with the
+  backbone stride (16) instead of the decoder stride (4), so every point landed
+  outside the image.
 
 ## Phase 0 (not started)
 

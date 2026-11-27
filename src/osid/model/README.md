@@ -190,8 +190,24 @@ uv run python -m osid.model.train --steps 60 --log-every 20
 Each step generates a pair, runs both views through the frozen backbone and the
 heads, and applies the two losses. Optimiser is AdamW on the 493k trainable
 parameters; the backbone receives no gradients. Validation uses a different seed
-range for the generator, and `heads.pt` plus `history.json` land in
-`outputs/train/`.
+range for the generator.
+
+Everything is written to `outputs/train/` (gitignored):
+
+| File | Contents |
+|---|---|
+| `heads.pt` | decoder, boundary and descriptor state dicts plus the architecture config |
+| `history.json` | every logged step: losses, validation precision and recall |
+
+Load a checkpoint to inspect what it learned:
+
+```bash
+uv run python -m osid.model --index 0 --checkpoint outputs/train/heads.pt
+```
+
+After 60 synthetic steps the boundary head puts its peaks on the edges of a real
+logo it has never seen, which is the first evidence that the boundary prior
+transfers beyond polygons.
 
 The first 60 steps, as a sanity check that the machinery learns at all:
 

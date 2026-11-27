@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from osid.model.detector import Detections, DetectorDescriptor
+from osid.model.train import load_checkpoint
 from osid.utils.dataset import InstanceDataset
 
 __all__ = ["main"]
@@ -49,6 +50,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=512)
     parser.add_argument("--device", default=None)
     parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        help="Trained heads written by osid.model.train.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("outputs/model-demo.png"),
@@ -67,10 +73,13 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = parse_args(argv)
     image, label = _load_image(args)
-    detector = DetectorDescriptor(
-        device=args.device,
-        max_keypoints=args.top_k,
-    )
+    if args.checkpoint is not None:
+        detector = load_checkpoint(args.checkpoint, device=args.device)
+    else:
+        detector = DetectorDescriptor(
+            device=args.device,
+            max_keypoints=args.top_k,
+        )
     detections = detector.detect(image)
     print(f"image:     {label}")
     print(f"keypoints: {len(detections)}")

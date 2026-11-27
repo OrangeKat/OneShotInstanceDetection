@@ -31,7 +31,7 @@ from osid.model.detector import DetectorDescriptor
 from osid.model.losses import boundary_target, focal_loss, infonce, symmetry_mask
 from osid.model.synth import ShapePair, ShapePairGenerator
 
-__all__ = ["Batch", "build_batch", "main", "train"]
+__all__ = ["Batch", "build_batch", "load_checkpoint", "main", "train"]
 
 
 @dataclass
@@ -132,6 +132,30 @@ def build_batch(
         points1=samples1,
         symmetry=symmetry,
     )
+
+
+def load_checkpoint(
+    path: Path,
+    *,
+    device: str | None = None,
+) -> DetectorDescriptor:
+    """Load trained heads into a fresh detector.
+
+    Args:
+        path: Checkpoint written by :func:`train`.
+        device: Device override.
+
+    Returns:
+        A detector with the trained decoder and heads.
+    """
+    payload = torch.load(path, map_location="cpu")
+    config = ModelConfig(**payload["config"])
+    model = DetectorDescriptor(config, device=device)
+    model.decoder.load_state_dict(payload["decoder"])
+    model.boundary.load_state_dict(payload["boundary"])
+    model.descriptor.load_state_dict(payload["descriptor"])
+    model.eval()
+    return model
 
 
 def _sample_descriptors(
