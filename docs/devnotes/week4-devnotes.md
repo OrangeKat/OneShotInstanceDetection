@@ -286,6 +286,33 @@ matcher over the token grid (which is what RoMa does with DINOv2 and a matching
 head). Either keeps the backbone frozen and trains something small, which is a
 better bet than either the 1x1 head or raw tokens.
 
+## DINOv3 as description *and* matching
+
+Per-keypoint nearest neighbour on DINO tokens gave zero matches, so the next
+test let DINO do the matching itself: dense patch tokens from both images,
+centred and normalised, a correlation matrix with dual softmax, and mutual
+argument-max as the correspondence rule, then RANSAC on the resulting points.
+
+40 real pairs, threshold swept around the softmax floor (1/784):
+
+| Confidence threshold | Matches per pair | Homographies | Hits |
+|---:|---:|---:|---:|
+| 0.000 | 57.9 | 40 / 40 | 3 / 40 |
+| 0.003 | 57.9 | 40 / 40 | 3 / 40 |
+| 0.010 | 57.7 | 40 / 40 | 3 / 40 |
+| 0.030 | 42.7 | 40 / 40 | 6 / 40 |
+
+So DINO tokens do carry matchable signal — dense correlation finds 40–58
+correspondences per pair and always yields a homography, where nearest
+neighbour on sampled vectors found nothing. But only 7.5–15% of pairs land the
+box, against SIFT's ~40% on the same data.
+
+The reading: a detector plus DINO description is viable, but the matching step
+has to be learned. Raw tokens at 1/16 are a feature source, not a matcher; the
+gap between "a homography exists" (100%) and "the homography is right" (8–15%)
+is exactly what a matching head is for, and it is the same gap RoMa closes with
+DINOv2 plus a trained matching and refinement stack.
+
 ## Phase 0 (not started)
 
 - Pseudo-masks from the reference boxes, then measure where current keypoints
