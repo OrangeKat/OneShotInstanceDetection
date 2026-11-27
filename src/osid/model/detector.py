@@ -18,7 +18,19 @@ from osid.model.config import ModelConfig
 from osid.model.heads import BoundaryHead, DescriptorHead, FuseDecoder
 from osid.model.matcher import extract_keypoints
 
-__all__ = ["Detections", "DetectorDescriptor"]
+__all__ = ["Detections", "DetectorDescriptor", "config_stride"]
+
+
+def config_stride(config: ModelConfig) -> int:
+    """Return the descriptor grid stride.
+
+    Args:
+        config: Architecture settings.
+
+    Returns:
+        Pixels per descriptor cell.
+    """
+    return max(1, int(config.decoder_stride))
 
 
 @dataclass
@@ -87,10 +99,15 @@ class DetectorDescriptor(nn.Module):
             device or ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.backbone = Dinov3Backbone(self.config, self.device)
+        backbone_stride = int(self.backbone.stride)
+        stages = max(
+            0, int(round(np.log2(backbone_stride / config_stride(self.config))))
+        )
         self.decoder = FuseDecoder(
             self.config.hidden_dim,
             self.config.out_dim,
             in_dim=int(self.backbone.model.embed_dim),
+            stages=stages,
         ).to(self.device)
         self.boundary = BoundaryHead(self.config.out_dim).to(self.device)
         self.descriptor = DescriptorHead(
@@ -179,7 +196,10 @@ class DetectorDescriptor(nn.Module):
         rows = points[:, 1].astype(int)
         columns = points[:, 0].astype(int)
         return Detections(
-            keypoints=features.to_original(points),
+            keypoints=features.to_original(
+                points,
+                grid_stride=config_stride(self.config),
+            ),
             scores=scores,
             descriptors=grid[rows, columns],
         )

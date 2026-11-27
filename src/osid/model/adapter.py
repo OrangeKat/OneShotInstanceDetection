@@ -39,6 +39,7 @@ class BenchmarkAdapter:
         max_keypoints: int | None = None,
         ransac_threshold: float = 3.0,
         config: ModelConfig | None = None,
+        matching: str = "mutual",
     ) -> None:
         """Build the adapter.
 
@@ -48,6 +49,10 @@ class BenchmarkAdapter:
             max_keypoints: Keypoint budget for a newly built detector.
             ransac_threshold: Reprojection threshold in pixels.
             config: Architecture settings for a newly built detector.
+            matching: ``mutual`` for nearest-neighbour plus a ratio test, or
+                ``many`` for top-k candidates refined by RANSAC. ``many`` is the
+                looser option, useful for testing whether the descriptor carries
+                any signal at all.
         """
         self.detector = detector or DetectorDescriptor(
             config,
@@ -55,6 +60,7 @@ class BenchmarkAdapter:
             max_keypoints=max_keypoints,
         )
         self.ransac_threshold = ransac_threshold
+        self.matching = matching
         self.name = self.detector.name
 
     def match(self, reference: np.ndarray, query: np.ndarray) -> MatchResult:
@@ -89,11 +95,18 @@ class BenchmarkAdapter:
         Returns:
             Keypoints, matches, and the estimated homography.
         """
-        pairs, scores = match_descriptors(
-            detections0.descriptors,
-            detections1.descriptors,
-            ratio=self.detector.config.ratio,
-        )
+        if self.matching == "many":
+            pairs, scores = _many_to_many(
+                detections0.descriptors,
+                detections1.descriptors,
+                top=3,
+            )
+        else:
+            pairs, scores = match_descriptors(
+                detections0.descriptors,
+                detections1.descriptors,
+                ratio=self.detector.config.ratio,
+            )
         source = (
             detections0.keypoints[[index0 for index0, _ in pairs]]
             if pairs
@@ -109,6 +122,17 @@ class BenchmarkAdapter:
             target,
             self.ransac_threshold,
         )
+        if (
+            self.matching == "many"
+            and homography is not None
+            and inlier_mask is not None
+        ):
+            kept = [pair for pair, keep in zip(pairs, inlier_mask) if bool(keep)]
+            pairs = tuple(kept)
+            scores = scores[: len(pairs)]
+            inlier_mask = np.ones(len(pairs), dtype=bool) if pairs else None
+            inlier_count = len(pairs)
+
         return MatchResult(
             keypoints0=detections0.keypoints,
             keypoints1=detections1.keypoints,
@@ -121,3 +145,30 @@ class BenchmarkAdapter:
             match_count=len(pairs),
             inlier_count=inlier_count,
         )
+
+
+def _many_to_many(
+    descriptors0: np.ndarray,
+    descriptors1: np.ndarray,
+    *,
+    top: int,
+) -> tuple[tuple[tuple[int, int], ...], tuple[float, ...]]:
+    """Return the top-k candidate pairs for each point.
+
+    Args:
+        descriptors0: ``(N, D)`` unit-length reference descriptors.
+        descriptors1: ``(M, D)`` unit-length query descriptors.
+        top: Candidates per reference point.
+
+    Returns:
+        Candidate index pairs and their similarities.
+    """
+    if len(descriptors0) == 0 or len(descriptors1) == 0:
+        return (), ()
+    similarity = descriptors0 @ descriptors1.T
+    order = np.argsort(-similarity, axis=1)[:, : max(1, top)]
+    pairs = [
+        (index0, int(index1)) for index0, row in enumerate(order) for index1 in row
+    ]
+    scores = tuple(float(similarity[index0, index1]) for index0, index1 in pairs)
+    return tuple(pairs), scores

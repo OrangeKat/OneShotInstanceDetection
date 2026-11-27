@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,7 @@ class Batch:
         points0: ``(K, 2)`` boundary points in view 0 pixels.
         points1: ``(K, 2)`` the same points in view 1 pixels.
         symmetry: ``(K, K)`` mask of ambiguous negatives.
+        negatives1: ``(M, 2)`` distractor boundary points in view 1.
     """
 
     image0: np.ndarray
@@ -56,6 +58,7 @@ class Batch:
     points0: np.ndarray
     points1: np.ndarray
     symmetry: np.ndarray
+    negatives1: np.ndarray
 
 
 def _resample_polyline(points: np.ndarray, count: int) -> np.ndarray:
@@ -104,6 +107,7 @@ def build_batch(
     *,
     out_size: int,
     points: int,
+    symmetry_threshold: float = 0.06,
 ) -> Batch:
     """Turn a generated pair into training tensors.
 
@@ -111,6 +115,8 @@ def build_batch(
         pair: Generated shape pair.
         out_size: Decoder output side used for heatmap targets.
         points: Number of boundary points for the descriptor loss.
+        symmetry_threshold: Object-space distance below which two points are
+            treated as ambiguous.
 
     Returns:
         A batched sample.
@@ -123,7 +129,7 @@ def build_batch(
     centre = samples0.mean(axis=0, keepdims=True)
     span = float(np.ptp(samples0, axis=0).max()) or 1.0
     normalised = (samples0 - centre) / span
-    symmetry = symmetry_mask(normalised, threshold=0.12).numpy()
+    symmetry = symmetry_mask(normalised, threshold=symmetry_threshold).numpy()
     return Batch(
         image0=pair.image0,
         image1=pair.image1,
@@ -132,6 +138,7 @@ def build_batch(
         points0=samples0,
         points1=samples1,
         symmetry=symmetry,
+        negatives1=pair.negatives1,
     )
 
 
@@ -139,24 +146,47 @@ def load_checkpoint(
     path: Path,
     *,
     device: str | None = None,
+    overrides: Mapping[str, object] | None = None,
 ) -> DetectorDescriptor:
     """Load trained heads into a fresh detector.
 
     Args:
         path: Checkpoint written by :func:`train`.
         device: Device override.
+        overrides: Config fields to override, for evaluating an older
+            checkpoint whose architecture has since changed.
 
     Returns:
         A detector with the trained decoder and heads.
     """
     payload = torch.load(path, map_location="cpu")
-    config = ModelConfig(**payload["config"])
+    config = ModelConfig(**{**payload["config"], **(overrides or {})})
     model = DetectorDescriptor(config, device=device)
-    model.decoder.load_state_dict(payload["decoder"])
+    model.decoder.load_state_dict(_upgrade_decoder_keys(payload["decoder"]))
     model.boundary.load_state_dict(payload["boundary"])
     model.descriptor.load_state_dict(payload["descriptor"])
     model.eval()
     return model
+
+
+def _upgrade_decoder_keys(state: dict) -> dict:
+    """Rename decoder keys written before the upsample refactor.
+
+    Args:
+        state: Decoder state dict.
+
+    Returns:
+        A state dict with ``up1.*`` / ``up2.*`` renamed to ``upsample.N.*``.
+    """
+    import re
+
+    upgraded = {}
+    for key, value in state.items():
+        match = re.match(r"^up(\d+)\.(.*)$", key)
+        upgraded[
+            f"upsample.{int(match.group(1)) - 1}.{match.group(2)}" if match else key
+        ] = value
+    return upgraded
 
 
 def _sample_descriptors(
@@ -219,7 +249,7 @@ def train(args: argparse.Namespace) -> int:
         limit=10_000,
         seed=args.seed + 101,
     )
-    out_size = args.size // 4
+    out_size = args.size // model.config.decoder_stride
 
     print(
         f"device {device} | trainable {sum(p.numel() for p in parameters) / 1e3:.1f}k "
@@ -239,6 +269,7 @@ def train(args: argparse.Namespace) -> int:
                 train_generator[index],
                 out_size=out_size,
                 points=args.points,
+                symmetry_threshold=args.symmetry_threshold,
             )
             logits0, descriptors0 = model.maps(batch.image0)
             logits1, descriptors1 = model.maps(batch.image1)
@@ -251,12 +282,18 @@ def train(args: argparse.Namespace) -> int:
             )
             sampled0 = _sample_descriptors(descriptors0, batch.points0, args.size)
             sampled1 = _sample_descriptors(descriptors1, batch.points1, args.size)
+            negatives = (
+                _sample_descriptors(descriptors1, batch.negatives1, args.size)
+                if len(batch.negatives1)
+                else None
+            )
             ignore = torch.as_tensor(batch.symmetry, device=device)
             descriptor = infonce(
                 sampled0,
                 sampled1,
                 temperature=args.temperature,
                 ignore=ignore,
+                negatives=negatives,
             )
 
             heat_total = heat_total + heat / args.batch
@@ -274,7 +311,7 @@ def train(args: argparse.Namespace) -> int:
                 f"step {step:4d} | heat {heat_total.item():.3f} "
                 f"| desc {descriptor_total.item():.3f} "
                 f"| val desc {metrics['descriptor']:.2f} "
-                f"vs chance {np.log(args.points):.2f} "
+                f"vs chance {np.log(args.points + train_generator.negative_points):.2f} "
                 f"| top1 {metrics['top1']:.3f} (chance {metrics['chance']:.3f}) "
                 f"| ignored {metrics['ignored']:.0%} "
                 f"| P {metrics['precision']:.2f} R {metrics['recall']:.2f} "
@@ -327,7 +364,12 @@ def _evaluate(
     threshold = model.config.boundary_threshold
 
     for index in range(args.validation_samples):
-        batch = build_batch(generator[index], out_size=out_size, points=args.points)
+        batch = build_batch(
+            generator[index],
+            out_size=out_size,
+            points=args.points,
+            symmetry_threshold=args.symmetry_threshold,
+        )
         logits0, map0 = model.maps(batch.image0)
         logits1, map1 = model.maps(batch.image1)
         target0 = torch.as_tensor(batch.heat0, device=device)[None]
@@ -410,11 +452,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the boundary heads.")
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch", type=int, default=1)
-    parser.add_argument("--points", type=int, default=128)
+    parser.add_argument("--points", type=int, default=512)
+    parser.add_argument("--symmetry-threshold", type=float, default=0.06)
     parser.add_argument("--size", type=int, default=448)
     parser.add_argument("--max-keypoints", type=int, default=512)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--temperature", type=float, default=0.07)
+    parser.add_argument("--temperature", type=float, default=0.05)
     parser.add_argument("--descriptor-weight", type=float, default=1.0)
     parser.add_argument("--validation-samples", type=int, default=15)
     parser.add_argument("--log-every", type=int, default=20)

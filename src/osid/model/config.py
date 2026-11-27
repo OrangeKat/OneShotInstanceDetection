@@ -15,6 +15,7 @@ class ModelConfig:
         backbone: timm name of the frozen feature extractor.
         pretrained: Load published weights instead of random initialisation.
         input_size: Long side the images are resized to before the backbone.
+        decoder_stride: Pixels per descriptor cell; 2 is finer than 4.
         layers: Transformer blocks tapped for features, in depth order.
         hidden_dim: Width of the fused multi-layer feature map.
         out_dim: Width handed to the two heads.
@@ -28,6 +29,7 @@ class ModelConfig:
     backbone: str = "vit_small_patch16_dinov3"
     pretrained: bool = True
     input_size: int = 448
+    decoder_stride: int = 2
     layers: tuple[int, ...] = (3, 6, 9, 11)
     hidden_dim: int = 128
     out_dim: int = 128

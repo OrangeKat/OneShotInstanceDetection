@@ -188,6 +188,71 @@ uniformly along the boundary; raise the descriptor to stride 2; add a projection
 head with per-image centering; and relax the matcher to many-to-many plus
 RANSAC, which would show whether any signal exists before retraining.
 
+## Second run: stride 2, centering, distractors
+
+The first run's descriptor sat at chance, so the descriptor path changed before
+another training session:
+
+- descriptor grid at stride 2 instead of 4;
+- per-image centering before normalisation, since DINOv3 patch features share a
+  large common direction;
+- 512 boundary points instead of 128, temperature 0.05;
+- 2 distractor shapes per frame, with 64 of their boundary points entering the
+  InfoNCE denominator;
+- validation now logs top-1 accuracy, the ignored-negative share, precision and
+  recall at the operating threshold on both views, and the keypoint count;
+  `best.pt` is kept on validation F1.
+
+1,000 steps, about two minutes:
+
+| step | boundary | descriptor | P | R | top-1 | chance | kp |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 82.6 | 14.9 | 0.02 | 0.67 | 0.003 | 0.002 | 512 |
+| 300 | 0.34 | 6.32 | 0.74 | 0.89 | 0.003 | 0.002 | 151 |
+| 1000 | 0.17 | 6.32 | 0.87 | 0.80 | 0.002 | 0.002 | 142 |
+
+The detector improved: precision and recall are now balanced at 0.87 / 0.80,
+against 0.96 / 0.62 at stride 4, and the keypoint count is 142 instead of 56
+because the finer grid keeps more peaks.
+
+The descriptor did not. Top-1 stays at chance for the whole run, and the loss
+does not move below the ln(576) = 6.36 floor (512 points plus 64 distractor
+negatives).
+
+## Real data, second checkpoint
+
+| matching | hit | AP@0.5 | matches | inliers | stages |
+|---|---:|---:|---:|---:|---|
+| mutual NN + ratio | 0.000 | 0.000 | 0.0 | 0.0 | no_matches 67% |
+| many-to-many + RANSAC | 0.000 | 0.000 | 20.2 | 20.2 | degenerate homography 57% |
+
+Switching to many-to-many does produce candidate matches, so the descriptor is
+not emitting identical vectors; but the geometry they imply is degenerate, so
+the candidates are wrong rather than merely sparse.
+
+Detector alone, same checkpoint: 107 keypoints per query, gradient percentile
+0.766 against SIFT's 0.796, and 6% inside the annotated box.
+
+## What the second run says about the descriptor
+
+Not "train longer". The descriptor is at chance *in distribution*, which means
+the task it was given is not learnable from its input. On a flat-coloured shape
+against a flat background, every point along a smooth edge has the same local
+appearance: same contrast, same two colours, same gradient direction. Only
+curvature distinguishes points, and a 1×1 head over smooth features cannot
+represent that.
+
+Two ways to make the task learnable, both structural:
+
+- **give the shapes local appearance variation** — texture, gradients, or a
+  pattern inside the shape, so two boundary points look different;
+- **make descriptors context-aware** — a patch descriptor from a larger
+  neighbourhood, which encodes where along the boundary it sits.
+
+The first is a generator change and the cheaper experiment; the second is a
+model change. Either is a better use of the next training session than another
+1,000 steps of the current setup.
+
 ## Phase 0 (not started)
 
 - Pseudo-masks from the reference boxes, then measure where current keypoints

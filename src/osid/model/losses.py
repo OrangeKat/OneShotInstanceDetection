@@ -108,6 +108,7 @@ def infonce(
     *,
     temperature: float = 0.07,
     ignore: torch.Tensor | None = None,
+    negatives: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Symmetric InfoNCE over corresponding descriptors.
 
@@ -120,15 +121,37 @@ def infonce(
             from the denominator, which is how genuinely ambiguous pairs (a
             symmetric shape matching itself elsewhere) are kept from penalising
             a correct prediction.
+        negatives: Optional ``(M, D)`` extra descriptors from other objects in
+            the same frame. They enter the denominator only, which is how the
+            descriptor learns to reject a distractor when the correspondences
+            are already correct.
 
     Returns:
         Scalar loss.
     """
-    logits = descriptors0 @ descriptors1.T / temperature
-    if ignore is not None:
-        logits = logits.masked_fill(ignore, float("-inf"))
     labels = torch.arange(len(descriptors0), device=descriptors0.device)
-    return 0.5 * (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels))
+    if negatives is None or len(negatives) == 0:
+        logits = descriptors0 @ descriptors1.T / temperature
+        if ignore is not None:
+            logits = logits.masked_fill(ignore, float("-inf"))
+        return 0.5 * (
+            F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)
+        )
+
+    # Extra negatives live in one view's candidate bank, so the loss is
+    # single-direction: reference points must pick their counterpart out of the
+    # query points plus the distractors.
+    bank = torch.cat([descriptors1, negatives], dim=0)
+    logits = descriptors0 @ bank.T / temperature
+    if ignore is not None:
+        mask = torch.zeros(
+            (len(descriptors0), bank.shape[0]),
+            dtype=torch.bool,
+            device=descriptors0.device,
+        )
+        mask[:, : ignore.shape[1]] = ignore
+        logits = logits.masked_fill(mask, float("-inf"))
+    return F.cross_entropy(logits, labels)
 
 
 def symmetry_mask(

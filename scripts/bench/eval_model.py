@@ -50,6 +50,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--negatives", type=int, default=100)
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     parser.add_argument("--baselines", nargs="*", default=["sift"])
+    parser.add_argument("--matching", choices=("mutual", "many"), default="mutual")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default=None)
     parser.add_argument(
@@ -88,7 +89,10 @@ def main(argv: list[str] | None = None) -> int:
         f"pairs: {len(chosen)} ({args.samples} positive, {len(chosen) - args.samples} negative)"
     )
 
-    adapter = BenchmarkAdapter(load_checkpoint(args.checkpoint, device=args.device))
+    adapter = BenchmarkAdapter(
+        load_checkpoint(args.checkpoint, device=args.device),
+        matching=args.matching,
+    )
     reports = {
         "osid_boundary": run_benchmark(
             adapter, chosen, args.iou_threshold, loader=dataset.load

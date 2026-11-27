@@ -22,7 +22,11 @@ class FuseDecoder(nn.Module):
     """
 
     def __init__(
-        self, hidden_dim: int, out_dim: int, in_dim: int | None = None
+        self,
+        hidden_dim: int,
+        out_dim: int,
+        in_dim: int | None = None,
+        stages: int = 2,
     ) -> None:
         """Build the decoder.
 
@@ -31,6 +35,7 @@ class FuseDecoder(nn.Module):
             out_dim: Width handed to the heads.
             in_dim: Channel count of the backbone layers. Built eagerly when
                 known so a saved state dict loads without a forward pass.
+            stages: Upsampling stages; each halves the feature stride.
         """
         super().__init__()
         self.projections = (
@@ -45,16 +50,17 @@ class FuseDecoder(nn.Module):
             nn.GroupNorm(8, hidden_dim),
             nn.GELU(),
         )
-        self.up1 = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dim, hidden_dim, 2, stride=2),
-            nn.GroupNorm(8, hidden_dim),
-            nn.GELU(),
-        )
-        self.up2 = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dim, out_dim, 2, stride=2),
-            nn.GroupNorm(8, out_dim),
-            nn.GELU(),
-        )
+        blocks = []
+        for stage in range(stages):
+            out_channels = out_dim if stage == stages - 1 else hidden_dim
+            blocks.append(
+                nn.Sequential(
+                    nn.ConvTranspose2d(hidden_dim, out_channels, 2, stride=2),
+                    nn.GroupNorm(8, out_channels),
+                    nn.GELU(),
+                )
+            )
+        self.upsample = nn.Sequential(*blocks)
 
     def forward(self, layers: list[torch.Tensor]) -> torch.Tensor:
         """Fuse layers and upsample.
@@ -83,7 +89,7 @@ class FuseDecoder(nn.Module):
                 )
             fused = projected if fused is None else fused + projected
         assert fused is not None
-        return self.up2(self.up1(self.fuse(fused)))
+        return self.upsample(self.fuse(fused))
 
 
 class BoundaryHead(nn.Module):
@@ -131,5 +137,11 @@ class DescriptorHead(nn.Module):
 
         Returns:
             ``(1, D, h, w)`` unit-length descriptors.
+
+        The map is centred per image before normalising. DINOv3 patch features
+        share a large common direction, which alone pushes every descriptor pair
+        to cosine 0.96 and leaves the matcher nothing to rank.
         """
-        return F.normalize(self.conv(features), dim=1)
+        descriptors = self.conv(features)
+        descriptors = descriptors - descriptors.mean(dim=(2, 3), keepdim=True)
+        return F.normalize(descriptors, dim=1)

@@ -1,18 +1,12 @@
-"""Synthetic pairs of shapes on flat backgrounds.
+"""Synthetic pairs of shapes on flat backgrounds, with distractors.
 
-The point of this generator is control, not realism: a filled polygon on a
-single-colour background, with the contrast, blur, noise, scale, rotation and
-perspective of each view set separately. Everything the model needs to learn is
-exact by construction — the silhouette is the mask and the placement transform
-*is* the correspondence between the two views.
+Control is the point: a filled shape on a single-colour background, with the
+number of sides, size, rotation, perspective, contrast, blur and noise set
+independently per view. Distractors — other shapes in the same frame — are what
+make the task about *this* shape rather than about edges in general.
 
-Each sample is:
-
-- view A and view B: the same polygon, placed independently, on flat
-  backgrounds, with different contrast, blur and noise;
-- ``homography``: the map from view A to view B, exact for the polygon;
-- ``mask``: the polygon silhouette in each view;
-- ``meta``: the knobs used, so results can be sliced by difficulty later.
+Everything is exact by construction: the polygon transform is the
+correspondence, and the rasterised polygon is the mask.
 """
 
 from __future__ import annotations
@@ -41,11 +35,17 @@ class ShapePair:
     Attributes:
         image0: First view, ``(size, size, 3)`` uint8 RGB.
         image1: Second view.
-        mask0: Polygon silhouette in view 0, uint8 0/1.
-        mask1: Polygon silhouette in view 1.
+        mask0: Object silhouette in view 0 (the reference contains no
+            distractors), uint8 0/1.
+        mask1: Silhouette of every shape in view 1, so the heatmap target
+            covers the clutter the detector should also fire on.
+        object_mask0: Object-only silhouette in view 0, for label checks.
+        object_mask1: Object-only silhouette in view 1.
         homography: ``3 x 3`` map from view 0 to view 1.
-        points0: Polygon vertices in view 0, for verifying the label.
-        points1: Polygon vertices in view 1.
+        points0: Object polygon vertices in view 0.
+        points1: Object polygon vertices in view 1.
+        negatives1: ``(M, 2)`` distractor boundary points in view 1, used as
+            extra negatives in the descriptor loss.
         meta: The parameters used, for slicing results by difficulty.
     """
 
@@ -53,10 +53,45 @@ class ShapePair:
     image1: np.ndarray
     mask0: np.ndarray
     mask1: np.ndarray
+    object_mask0: np.ndarray
+    object_mask1: np.ndarray
     homography: np.ndarray
     points0: np.ndarray
     points1: np.ndarray
+    negatives1: np.ndarray
     meta: dict[str, float]
+
+
+def _normalise(points: np.ndarray) -> np.ndarray:
+    """Scale points so the largest radius is one.
+
+    Args:
+        points: ``(N, 2)`` boundary points.
+
+    Returns:
+        ``(N, 2)`` points with maximum radius 1.
+    """
+    radius = float(np.linalg.norm(points, axis=1).max())
+    return points / max(radius, 1e-6)
+
+
+def _chaikin(points: np.ndarray, iterations: int = 2) -> np.ndarray:
+    """Round the corners of a closed polygon.
+
+    Args:
+        points: ``(N, 2)`` polygon vertices.
+        iterations: Corner-cutting passes.
+
+    Returns:
+        A denser, smoother closed boundary.
+    """
+    smoothed = points
+    for _ in range(iterations):
+        shifted = np.roll(smoothed, -1, axis=0)
+        first = 0.75 * smoothed + 0.25 * shifted
+        second = 0.25 * smoothed + 0.75 * shifted
+        smoothed = np.stack([first, second], axis=1).reshape(-1, 2)
+    return smoothed
 
 
 class ShapePairGenerator:
@@ -65,10 +100,8 @@ class ShapePairGenerator:
     Attributes:
         size: Canvas side in pixels.
         limit: Samples per epoch.
-        contrast_range: Luminance difference between shape and background.
-        blur_range: Gaussian sigma applied per view.
-        noise_range: Gaussian noise sigma applied per view.
-        same_background: Whether both views share a background colour.
+        distractors: Extra shapes placed around the object.
+        negative_points: Distractor boundary points kept per pair.
     """
 
     def __init__(
@@ -83,6 +116,8 @@ class ShapePairGenerator:
         scale_range: tuple[float, float] = (0.08, 0.5),
         same_background: bool = False,
         shape_kind: str | None = None,
+        distractors: int = 2,
+        negative_points: int = 64,
     ) -> None:
         """Configure the generator.
 
@@ -96,7 +131,11 @@ class ShapePairGenerator:
             scale_range: Polygon radius as a fraction of the canvas.
             same_background: Share one background colour across the views.
             shape_kind: Force one family, or ``None`` to sample them.
+            distractors: Extra shapes per frame, 0 for the object alone.
+            negative_points: Distractor boundary points returned for the loss.
         """
+        if shape_kind is not None and shape_kind not in SHAPE_KINDS:
+            raise ValueError(f"unknown shape kind: {shape_kind}")
         self.size = size
         self.limit = limit
         self.seed = seed
@@ -105,9 +144,9 @@ class ShapePairGenerator:
         self.noise_range = noise_range
         self.scale_range = scale_range
         self.same_background = same_background
-        if shape_kind is not None and shape_kind not in SHAPE_KINDS:
-            raise ValueError(f"unknown shape kind: {shape_kind}")
         self.shape_kind = shape_kind
+        self.distractors = distractors
+        self.negative_points = negative_points
 
     def __len__(self) -> int:
         """Return the number of samples per epoch.
@@ -127,58 +166,76 @@ class ShapePairGenerator:
             A generated pair.
         """
         rng = np.random.default_rng(int(index) + self.seed * 104_729 + 17)
-        polygon, kind = self._shape(rng)
-        sides = len(polygon)
+        object_polygon, kind = self._shape(rng)
+        shapes = [
+            {
+                "polygon": object_polygon,
+                "transform0": self._placement(object_polygon, rng),
+                "transform1": self._placement(object_polygon, rng),
+                "contrast0": float(rng.uniform(*self.contrast_range)),
+                "contrast1": float(rng.uniform(*self.contrast_range)),
+            }
+        ]
+        for _ in range(self.distractors):
+            polygon, _ = self._shape(rng)
+            shapes.append(
+                {
+                    "polygon": polygon,
+                    "transform0": self._placement(polygon, rng),
+                    "transform1": self._placement(polygon, rng),
+                    "contrast0": float(rng.uniform(*self.contrast_range)),
+                    "contrast1": float(rng.uniform(*self.contrast_range)),
+                }
+            )
 
         background0 = self._colour(rng)
         background1 = background0 if self.same_background else self._colour(rng)
-
-        contrast0 = float(rng.uniform(*self.contrast_range))
-        contrast1 = float(rng.uniform(*self.contrast_range))
         blur0 = float(rng.uniform(*self.blur_range))
         blur1 = float(rng.uniform(*self.blur_range))
         noise0 = float(rng.uniform(*self.noise_range))
         noise1 = float(rng.uniform(*self.noise_range))
 
-        transform0 = self._placement(polygon, rng)
-        transform1 = self._placement(polygon, rng)
-        image0, mask0 = self._render(
-            polygon, transform0, background0, contrast0, blur0, noise0, rng
+        image0, mask0, object0 = self._view(
+            shapes[:1], 0, background0, blur0, noise0, rng
         )
-        image1, mask1 = self._render(
-            polygon, transform1, background1, contrast1, blur1, noise1, rng
+        image1, mask1, object1 = self._view(shapes, 1, background1, blur1, noise1, rng)
+
+        object_shape = shapes[0]
+        points0 = self._apply(object_shape["transform0"], object_polygon)
+        points1 = self._apply(object_shape["transform1"], object_polygon)
+        homography = object_shape["transform1"] @ np.linalg.inv(
+            object_shape["transform0"]
         )
-        homography = transform1 @ np.linalg.inv(transform0)
+        negatives = self._distractor_points(shapes[1:], "transform1", rng)
+
         meta = {
             "kind": float(SHAPE_KINDS.index(kind)),
-            "sides": float(sides),
-            "contrast0": contrast0,
-            "contrast1": contrast1,
+            "sides": float(len(object_polygon)),
+            "contrast0": object_shape["contrast0"],
+            "contrast1": object_shape["contrast1"],
             "blur0": blur0,
             "blur1": blur1,
             "noise0": noise0,
             "noise1": noise1,
+            "distractors": float(len(shapes) - 1),
         }
         return ShapePair(
             image0=image0,
             image1=image1,
             mask0=mask0,
             mask1=mask1,
+            object_mask0=object0,
+            object_mask1=object1,
             homography=homography.astype(np.float64),
-            points0=self._apply(transform0, polygon),
-            points1=self._apply(transform1, polygon),
+            points0=points0,
+            points1=points1,
+            negatives1=negatives,
             meta=meta,
         )
 
-    def _shape(
-        self,
-        rng: np.random.Generator,
-    ) -> tuple[np.ndarray, str]:
+    # ------------------------------------------------------------------ shapes
+    def _shape(self, rng: np.random.Generator) -> tuple[np.ndarray, str]:
         """Sample a closed silhouette in canonical coordinates.
-
-        Five families, so the model sees straight edges, rounded corners,
-        smooth lobes, sharp stars, and stretched ellipses rather than one shape
-        prior:
 
         Args:
             rng: Random generator.
@@ -247,32 +304,27 @@ class ShapePairGenerator:
         polygon: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        """Sample a placement transform for one view.
-
-        The polygon is kept fully inside the canvas: clipping one view but not
-        the other would break the correspondence label for the clipped part.
+        """Sample a placement transform for one shape.
 
         Args:
             polygon: Canonical polygon vertices.
             rng: Random generator.
 
         Returns:
-            ``3 x 3`` transform from canonical polygon coordinates to canvas.
+            ``3 x 3`` transform from canonical coordinates to the canvas.
         """
         radius = float(rng.uniform(*self.scale_range)) * self.size
         angle = float(rng.uniform(-180.0, 180.0))
         max_norm = float(np.linalg.norm(polygon, axis=1).max())
-        # A shape that cannot fit would be clipped, which breaks the part of the
-        # correspondence label that falls outside the canvas.
         radius = min(radius, (self.size / 2.0 - 3.0) / max(max_norm, 1e-6))
-        # Margin absorbs the mild perspective, which pushes points outwards.
         extent = 1.08 * radius * max_norm
         low = extent + 2.0
         high = self.size - extent - 2.0
-        if low >= high:
-            centre = np.array([self.size / 2.0, self.size / 2.0])
-        else:
-            centre = rng.uniform(low, high, 2)
+        centre = (
+            np.array([self.size / 2.0, self.size / 2.0])
+            if low >= high
+            else rng.uniform(low, high, 2)
+        )
         radians = np.deg2rad(angle)
         rotation = np.array(
             [
@@ -294,54 +346,123 @@ class ShapePairGenerator:
         )
         return translation @ perspective @ rotation @ scaling
 
-    def _render(
+    def _view(
         self,
-        polygon: np.ndarray,
-        transform: np.ndarray,
+        shapes: list[dict[str, object]],
+        view: int,
         background: np.ndarray,
-        contrast: float,
         blur: float,
         noise: float,
         rng: np.random.Generator,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Render one view.
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Render every shape onto one background.
 
         Args:
-            polygon: Canonical polygon vertices.
-            transform: Canonical-to-canvas transform.
+            shapes: Shape records with polygons, transforms and contrasts.
+            view: 0 or 1, selecting the transform and contrast to use.
             background: Background colour in ``[0, 1]``.
-            contrast: Luminance difference between shape and background.
-            blur: Gaussian sigma, applied after compositing.
+            blur: Gaussian sigma applied after compositing.
             noise: Additive Gaussian sigma.
             rng: Random generator, used for the contrast direction.
 
         Returns:
-            RGB uint8 image and binary silhouette.
+            RGB uint8 image, the union silhouette, and the object silhouette.
+        """
+        image = np.repeat(background[None, None, :], self.size, axis=0)
+        image = np.repeat(image, self.size, axis=1)
+        union = np.zeros((self.size, self.size), dtype=np.float32)
+        object_mask = np.zeros((self.size, self.size), dtype=np.float32)
+        for position, shape in enumerate(shapes):
+            polygon = shape["polygon"]
+            transform = shape[f"transform{view}"]
+            contrast = float(shape[f"contrast{view}"])
+            alpha = self._raster(polygon, transform)
+            direction = rng.normal(0.0, 1.0, 3)
+            direction /= max(float(np.linalg.norm(direction)), 1e-6)
+            foreground = np.clip(
+                background + direction.astype(np.float32) * contrast, 0.0, 1.0
+            )
+            image = image * (1.0 - alpha[:, :, None]) + foreground * alpha[:, :, None]
+            union = np.maximum(union, alpha)
+            if position == 0:
+                object_mask = alpha
+        if blur > 0:
+            image = cv2.GaussianBlur(image, (0, 0), blur)
+        if noise > 0:
+            image = image + rng.normal(0.0, noise, image.shape).astype(np.float32)
+        image = np.clip(image, 0.0, 1.0)
+        return (
+            (image * 255.0).astype(np.uint8),
+            (union > 0.5).astype(np.uint8),
+            (object_mask > 0.5).astype(np.uint8),
+        )
+
+    def _raster(
+        self,
+        polygon: np.ndarray,
+        transform: np.ndarray,
+    ) -> np.ndarray:
+        """Rasterise one transformed polygon into an alpha map.
+
+        Args:
+            polygon: Canonical polygon vertices.
+            transform: Canonical-to-canvas transform.
+
+        Returns:
+            ``(size, size)`` alpha map in ``[0, 1]``.
         """
         points = self._apply(transform, polygon)
         high = self.size * SUPERSAMPLE
         canvas = np.zeros((high, high), dtype=np.uint8)
         cv2.fillPoly(canvas, [np.round(points * SUPERSAMPLE).astype(np.int32)], 255)
         alpha = cv2.resize(canvas, (self.size, self.size), interpolation=cv2.INTER_AREA)
-        alpha = alpha.astype(np.float32) / 255.0
+        return alpha.astype(np.float32) / 255.0
 
-        direction = rng.normal(0.0, 1.0, 3)
-        direction /= max(float(np.linalg.norm(direction)), 1e-6)
-        foreground = np.clip(
-            background + direction.astype(np.float32) * contrast,
-            0.0,
-            1.0,
+    def _distractor_points(
+        self,
+        shapes: list[dict[str, object]],
+        transform_key: str,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """Sample boundary points on the distractor shapes.
+
+        Args:
+            shapes: Distractor records.
+            transform_key: ``transform0`` or ``transform1``.
+            rng: Random generator.
+
+        Returns:
+            ``(M, 2)`` points in the requested view.
+        """
+        if not shapes or self.negative_points <= 0:
+            return np.zeros((0, 2), dtype=np.float32)
+        per_shape = max(1, self.negative_points // len(shapes))
+        samples = []
+        for shape in shapes:
+            points = self._apply(shape[transform_key], shape["polygon"])
+            closed = np.concatenate([points, points[:1]], axis=0)
+            cumulative = np.concatenate(
+                [[0.0], np.cumsum(np.linalg.norm(np.diff(closed, axis=0), axis=1))]
+            )
+            total = float(cumulative[-1])
+            if total <= 0:
+                continue
+            for position in np.linspace(0.0, total, per_shape, endpoint=False):
+                index = min(
+                    int(np.searchsorted(cumulative, position, side="right") - 1),
+                    len(points) - 1,
+                )
+                local = (position - cumulative[index]) / max(
+                    cumulative[index + 1] - cumulative[index], 1e-9
+                )
+                samples.append(
+                    closed[index] + local * (closed[index + 1] - closed[index])
+                )
+        return (
+            np.asarray(samples, dtype=np.float32)
+            if samples
+            else np.zeros((0, 2), dtype=np.float32)
         )
-        image = (
-            background[None, None, :] * (1.0 - alpha[:, :, None])
-            + foreground[None, None, :] * alpha[:, :, None]
-        )
-        if blur > 0:
-            image = cv2.GaussianBlur(image, (0, 0), blur)
-        if noise > 0:
-            image = image + rng.normal(0.0, noise, image.shape).astype(np.float32)
-        image = np.clip(image, 0.0, 1.0)
-        return (image * 255.0).astype(np.uint8), (alpha > 0.5).astype(np.uint8)
 
     @staticmethod
     def _apply(transform: np.ndarray, points: np.ndarray) -> np.ndarray:
@@ -354,44 +475,9 @@ class ShapePairGenerator:
         Returns:
             ``(N, 2)`` transformed points.
         """
-        homogeneous = np.concatenate(
-            [points, np.ones((len(points), 1))],
-            axis=1,
-        )
+        homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
         projected = homogeneous @ transform.T
         return projected[:, :2] / projected[:, 2:3]
-
-
-def _normalise(points: np.ndarray) -> np.ndarray:
-    """Scale points so the largest radius is one.
-
-    Args:
-        points: ``(N, 2)`` boundary points.
-
-    Returns:
-        ``(N, 2)`` points with maximum radius 1.
-    """
-    radius = float(np.linalg.norm(points, axis=1).max())
-    return points / max(radius, 1e-6)
-
-
-def _chaikin(points: np.ndarray, iterations: int = 2) -> np.ndarray:
-    """Round the corners of a closed polygon.
-
-    Args:
-        points: ``(N, 2)`` polygon vertices.
-        iterations: Corner-cutting passes.
-
-    Returns:
-        A denser, smoother closed boundary.
-    """
-    smoothed = points
-    for _ in range(iterations):
-        shifted = np.roll(smoothed, -1, axis=0)
-        first = 0.75 * smoothed + 0.25 * shifted
-        second = 0.25 * smoothed + 0.75 * shifted
-        smoothed = np.stack([first, second], axis=1).reshape(-1, 2)
-    return smoothed
 
 
 def boundary_band(mask: np.ndarray, width: int = 2) -> np.ndarray:
@@ -412,7 +498,7 @@ def boundary_band(mask: np.ndarray, width: int = 2) -> np.ndarray:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Render a difficulty grid or check label alignment.
+    """Render a contact sheet, a difficulty grid, or check label alignment.
 
     Args:
         argv: Optional argument list.
@@ -424,16 +510,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--samples", type=int, default=6)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--size", type=int, default=448)
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Report mask alignment under the generated homographies.",
-    )
-    parser.add_argument(
-        "--grid",
-        action="store_true",
-        help="Render a contrast and blur grid instead of random pairs.",
-    )
+    parser.add_argument("--distractors", type=int, default=2)
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--grid", action="store_true")
     parser.add_argument(
         "--output",
         type=Path,
@@ -441,31 +520,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    generator = ShapePairGenerator(size=args.size, limit=args.samples, seed=args.seed)
+    generator = ShapePairGenerator(
+        size=args.size,
+        limit=args.samples,
+        seed=args.seed,
+        distractors=args.distractors,
+    )
     if args.check:
-        ious = []
-        errors = []
+        ious, errors = [], []
         for index in range(args.samples):
             pair = generator[index]
             warped = cv2.warpPerspective(
-                pair.mask0,
+                pair.object_mask0,
                 pair.homography,
                 (args.size, args.size),
                 flags=cv2.INTER_NEAREST,
             )
-            intersection = int(np.logical_and(warped > 0, pair.mask1 > 0).sum())
-            union = int(np.logical_or(warped > 0, pair.mask1 > 0).sum())
+            intersection = int(np.logical_and(warped > 0, pair.object_mask1 > 0).sum())
+            union = int(np.logical_or(warped > 0, pair.object_mask1 > 0).sum())
             ious.append(intersection / union if union else 0.0)
             projected = ShapePairGenerator._apply(pair.homography, pair.points0)
             errors.append(float(np.abs(projected - pair.points1).max()))
-        print(
-            f"mask alignment IoU: mean {np.mean(ious):.3f} min {np.min(ious):.3f} "
-            "(edge resampling; small shapes score lower)"
-        )
-        print(
-            f"vertex reprojection error: max {max(errors):.2e} px, "
-            f"mean {np.mean(errors):.2e} px"
-        )
+        print(f"mask alignment IoU: mean {np.mean(ious):.3f} min {np.min(ious):.3f}")
+        print(f"vertex reprojection error: max {max(errors):.2e} px")
 
     if args.grid:
         _write_grid(args.output, size=args.size // 2)
@@ -474,9 +551,15 @@ def main(argv: list[str] | None = None) -> int:
     cells = []
     for index in range(args.samples):
         pair = generator[index]
-        left = _annotate(pair.image0, pair.mask0, pair.meta, "A")
-        right = _annotate(pair.image1, pair.mask1, pair.meta, "B")
-        cells.append(np.concatenate([left, right], axis=1))
+        cells.append(
+            np.concatenate(
+                [
+                    _annotate(pair.image0, pair.mask0, pair.meta, "A"),
+                    _annotate(pair.image1, pair.mask1, pair.meta, "B"),
+                ],
+                axis=1,
+            )
+        )
     sheet = np.concatenate(cells, axis=0)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(args.output), cv2.cvtColor(sheet, cv2.COLOR_RGB2BGR))
@@ -506,6 +589,7 @@ def _write_grid(path: Path, *, size: int) -> None:
                 noise_range=(0.015, 0.015),
                 same_background=True,
                 shape_kind="blob",
+                distractors=0,
             )
             pair = generator[0]
             cell = pair.image1.copy()
@@ -536,7 +620,7 @@ def _annotate(
     meta: dict[str, float],
     label: str,
 ) -> np.ndarray:
-    """Draw the silhouette and the difficulty knobs.
+    """Draw the silhouettes and the difficulty knobs.
 
     Args:
         image: RGB image.
@@ -553,10 +637,10 @@ def _annotate(
     suffix = "0" if label == "A" else "1"
     text = (
         f"{label}  contrast {meta[f'contrast{suffix}']:.2f}  "
-        f"sigma {meta[f'blur{suffix}']:.1f}  "
-        f"noise {meta[f'noise{suffix}']:.3f}"
+        f"blur {meta[f'blur{suffix}']:.1f}  noise {meta[f'noise{suffix}']:.3f}  "
+        f"distractors {int(meta['distractors'])}"
     )
-    cv2.putText(view, text, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+    cv2.putText(view, text, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
     return view
 
 
