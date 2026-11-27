@@ -86,6 +86,7 @@ descriptors               N x 128              gathered from the map
 | `backbone.py` | frozen DINOv3 ViT-S/16, multi-layer features, resize + normalise, feature→pixel mapping | swap the backbone, change which blocks are tapped |
 | `heads.py` | fusion decoder to stride 4, boundary head, descriptor head | decoder depth, widths, head design |
 | `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned |
+| `losses.py` | boundary heatmap target + focal loss, descriptor InfoNCE | loss design, temperatures, symmetry handling |
 | `matcher.py` | matching utilities: mutual NN, ratio test | matching rules, when you want them shared |
 | `adapter.py` | benchmark adapter: detect both images, then match | the matcher used for benchmarking, homography settings |
 | `synth.py` | synthetic shapes on flat backgrounds, with masks and an exact homography | shape complexity, contrast, blur, noise, placement |
@@ -144,6 +145,39 @@ high-contrast polygon and match it under blur and noise, it will not do better
 on a logo photographed in the wild. What it cannot provide is realism —
 appearance change, texture, occlusion by other objects, real backgrounds. That
 is the next generator, not this one.
+
+## Losses
+
+Two, and only two for the first attempt.
+
+**Boundary heatmap loss.** The silhouette is rasterised into a Gaussian heatmap
+at the decoder resolution (112×112, σ = 0.9 cells) and trained with the
+penalty-reduced focal loss:
+
+```text
+L_heat = -1/N Σ (1-p)^α log p        on cells at the boundary, α = 2
+         -1/N Σ (1-y)^β p^α log(1-p) elsewhere, β = 4
+```
+
+Full-resolution bands were ruled out: a 1 px edge at 448 px is a quarter of a
+cell at stride 4, so the target would be almost empty.
+
+**Descriptor loss.** Symmetric InfoNCE at τ = 0.07 over descriptors sampled at
+corresponding boundary points, with an optional mask that excludes negatives
+closer than a threshold in object space. Without that mask, a symmetric shape
+(ellipse, regular star) penalises the model for a correct but ambiguous match.
+
+```bash
+uv run python -m osid.model.losses     # numerical checks
+```
+
+The checks confirm the three things that silently ruin training: the heatmap
+peaks land on the true boundary (89.8 px against a 90 px circle), the focal loss
+prefers an aligned prediction to an inverted one, and InfoNCE separates matched
+pairs (0.003) from shuffled ones (14.7).
+
+Deferred on purpose: coverage/spread regularisation, subpixel offset regression,
+curvature weighting. Each is a refinement of a signal that has to exist first.
 
 ## Why per-image
 

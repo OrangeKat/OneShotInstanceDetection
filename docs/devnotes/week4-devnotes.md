@@ -63,6 +63,11 @@ runs; the write-up follows once the work is finished.
   edge rasterisation on the smallest shapes).
 - Added a contrast x blur grid so difficulty can be inspected directly rather
   than inferred from the parameters.
+- Added the two losses for a first training attempt: a boundary heatmap target at
+  decoder resolution with a penalty-reduced focal loss, and symmetric InfoNCE on
+  descriptors at corresponding boundary points with a symmetry mask. Both are
+  checked numerically (`python -m osid.model.losses`) before any training loop
+  exists.
 
 ## Phase 0 (not started)
 
