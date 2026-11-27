@@ -113,6 +113,32 @@ FlickrLogos-32, 150 positives and 75 negatives sampled from the manifest:
 Stages: `no_matches` 146 (65%), `true_negative` 75 (33%), `too_few_matches` 4
 (2%). The failure is not a wrong box; matching produces almost nothing.
 
+### What the metrics now show
+
+The first evaluation exposed a gap in the training log itself, so the loop was
+changed before any further training. It now reports descriptor top-1 accuracy
+against its chance floor, the share of negatives the symmetry mask suppresses,
+precision and recall at the threshold inference actually uses, on both views,
+and the median keypoint count; `best.pt` is kept on validation F1.
+
+Re-scoring the existing 2,000-step checkpoint on a fresh validation seed:
+
+| Metric | Value |
+|---|---:|
+| Descriptor loss | 3.36 (chance at 128 points: 4.85) |
+| Descriptor top-1 accuracy | 0.066 (chance 0.008) |
+| Negatives suppressed by the symmetry mask | 8% |
+| Heatmap precision at the 0.3 threshold | 0.95 |
+| Heatmap recall at the 0.3 threshold | 0.74 |
+| Median keypoints per image | 56 |
+
+Two corrections to the earlier reading. The detector is better than the 0.5
+threshold suggested: 0.95 precision and 0.74 recall at the operating point,
+against 0.96 / 0.62 measured at 0.5. And the descriptor is weak but not empty:
+top-1 is 8x chance, so some positional signal exists; it is simply far from
+usable. The symmetry mask was ruled out as a cause, suppressing 8% of negatives
+rather than most of them.
+
 ### Detector alone, on real images
 
 The benchmark result above measures the matcher, not the detector. Isolating the

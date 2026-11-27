@@ -29,6 +29,7 @@ from torch.nn import functional as F
 from osid.model.config import ModelConfig
 from osid.model.detector import DetectorDescriptor
 from osid.model.losses import boundary_target, focal_loss, infonce, symmetry_mask
+from osid.model.matcher import extract_keypoints
 from osid.model.synth import ShapePair, ShapePairGenerator
 
 __all__ = ["Batch", "build_batch", "load_checkpoint", "main", "train"]
@@ -225,6 +226,7 @@ def train(args: argparse.Namespace) -> int:
         f"| steps {args.steps} | batch {args.batch}"
     )
     started = time.time()
+    best_f1 = -1.0
     history: list[dict[str, float]] = []
     for step in range(1, args.steps + 1):
         optimizer.zero_grad(set_to_none=True)
@@ -271,22 +273,21 @@ def train(args: argparse.Namespace) -> int:
             print(
                 f"step {step:4d} | heat {heat_total.item():.3f} "
                 f"| desc {descriptor_total.item():.3f} "
-                f"| val heat {metrics['heat']:.3f} "
-                f"| val desc {metrics['descriptor']:.3f} "
+                f"| val desc {metrics['descriptor']:.2f} "
+                f"vs chance {np.log(args.points):.2f} "
+                f"| top1 {metrics['top1']:.3f} (chance {metrics['chance']:.3f}) "
+                f"| ignored {metrics['ignored']:.0%} "
                 f"| P {metrics['precision']:.2f} R {metrics['recall']:.2f} "
+                f"| kp {metrics['peaks']:.0f} "
                 f"| {time.time() - started:.0f}s"
             )
+            if metrics["f1"] > best_f1:
+                best_f1 = metrics["f1"]
+                _save(model, config, args.output / "best.pt")
 
-    args.output.mkdir(parents=True, exist_ok=True)
-    checkpoint = {
-        "config": config.__dict__,
-        "decoder": model.decoder.state_dict(),
-        "boundary": model.boundary.state_dict(),
-        "descriptor": model.descriptor.state_dict(),
-    }
-    torch.save(checkpoint, args.output / "heads.pt")
+    _save(model, config, args.output / "heads.pt")
     (args.output / "history.json").write_text(json.dumps(history, indent=2) + "\n")
-    print(f"wrote {args.output / 'heads.pt'}")
+    print(f"wrote {args.output / 'heads.pt'} (best validation F1 {best_f1:.3f})")
     return 0
 
 
@@ -300,6 +301,12 @@ def _evaluate(
 ) -> dict[str, float]:
     """Evaluate on a held-out seed range.
 
+    Reports what tells "the model got better" apart from "the loss went down":
+    heatmap precision and recall at the threshold inference actually uses, on
+    both views; descriptor top-1 accuracy against its chance floor; the share of
+    negatives the symmetry mask suppresses; and how many keypoints the detector
+    keeps.
+
     Args:
         model: Model under training.
         generator: Validation generator.
@@ -308,12 +315,17 @@ def _evaluate(
         device: Device under test.
 
     Returns:
-        Loss and heatmap precision/recall.
+        Loss, accuracy, and coverage metrics.
     """
     model.eval()
     heats: list[float] = []
     descriptors: list[float] = []
+    top1: list[float] = []
+    ignored: list[float] = []
+    peaks: list[float] = []
     true_positive = false_positive = false_negative = 0
+    threshold = model.config.boundary_threshold
+
     for index in range(args.validation_samples):
         batch = build_batch(generator[index], out_size=out_size, points=args.points)
         logits0, map0 = model.maps(batch.image0)
@@ -321,24 +333,34 @@ def _evaluate(
         target0 = torch.as_tensor(batch.heat0, device=device)[None]
         target1 = torch.as_tensor(batch.heat1, device=device)[None]
         heats.append(float(focal_loss(logits0, target0) + focal_loss(logits1, target1)))
+
         sampled0 = _sample_descriptors(map0, batch.points0, args.size)
         sampled1 = _sample_descriptors(map1, batch.points1, args.size)
         ignore = torch.as_tensor(batch.symmetry, device=device)
         descriptors.append(
             float(
-                infonce(
-                    sampled0,
-                    sampled1,
-                    temperature=args.temperature,
-                    ignore=ignore,
-                )
+                infonce(sampled0, sampled1, temperature=args.temperature, ignore=ignore)
             )
         )
-        predicted = torch.sigmoid(logits0)[0, 0] >= 0.5
-        truth = target0[0, 0] >= 0.5
-        true_positive += int((predicted & truth).sum())
-        false_positive += int((predicted & ~truth).sum())
-        false_negative += int((~predicted & truth).sum())
+
+        predictions = (sampled0 @ sampled1.T).argmax(dim=1)
+        labels = torch.arange(len(predictions), device=device)
+        top1.append(float((predictions == labels).float().mean()))
+        off_diagonal = max(len(batch.symmetry) * (len(batch.symmetry) - 1), 1)
+        ignored.append(float(batch.symmetry.sum()) / off_diagonal)
+
+        for logits, target in ((logits0, target0), (logits1, target1)):
+            predicted = torch.sigmoid(logits)[0, 0] >= threshold
+            truth = target[0, 0] >= 0.5
+            true_positive += int((predicted & truth).sum())
+            false_positive += int((predicted & ~truth).sum())
+            false_negative += int((~predicted & truth).sum())
+            points, _ = extract_keypoints(
+                logits,
+                threshold=threshold,
+                top_k=model.config.top_k,
+            )
+            peaks.append(float(len(points)))
 
     model.train()
     precision = true_positive / max(true_positive + false_positive, 1)
@@ -346,9 +368,34 @@ def _evaluate(
     return {
         "heat": float(np.mean(heats)),
         "descriptor": float(np.mean(descriptors)),
+        "top1": float(np.mean(top1)),
+        "chance": 1.0 / max(args.points, 1),
+        "ignored": float(np.mean(ignored)),
         "precision": precision,
         "recall": recall,
+        "f1": 2 * precision * recall / max(precision + recall, 1e-9),
+        "peaks": float(np.median(peaks)),
     }
+
+
+def _save(model: DetectorDescriptor, config: ModelConfig, path: Path) -> None:
+    """Write the trained heads and the architecture config.
+
+    Args:
+        model: Model to save.
+        config: Architecture settings.
+        path: Destination file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "config": config.__dict__,
+            "decoder": model.decoder.state_dict(),
+            "boundary": model.boundary.state_dict(),
+            "descriptor": model.descriptor.state_dict(),
+        },
+        path,
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -369,7 +416,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--temperature", type=float, default=0.07)
     parser.add_argument("--descriptor-weight", type=float, default=1.0)
-    parser.add_argument("--validation-samples", type=int, default=3)
+    parser.add_argument("--validation-samples", type=int, default=15)
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default=None)

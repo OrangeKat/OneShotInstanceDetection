@@ -190,13 +190,17 @@ uv run python -m osid.model.train --steps 60 --log-every 20
 Each step generates a pair, runs both views through the frozen backbone and the
 heads, and applies the two losses. Optimiser is AdamW on the 493k trainable
 parameters; the backbone receives no gradients. Validation uses a different seed
-range for the generator.
+range for the generator and reports what separates "the loss went down" from
+"the model got better": descriptor top-1 accuracy against its chance floor, the
+share of negatives the symmetry mask suppresses, precision and recall at the
+inference threshold on both views, and the median keypoint count.
 
 Everything is written to `outputs/train/` (gitignored):
 
 | File | Contents |
 |---|---|
 | `heads.pt` | decoder, boundary and descriptor state dicts plus the architecture config |
+| `best.pt` | the same, at the step with the best validation F1 |
 | `history.json` | every logged step: losses, validation precision and recall |
 
 Load a checkpoint to inspect what it learned:
