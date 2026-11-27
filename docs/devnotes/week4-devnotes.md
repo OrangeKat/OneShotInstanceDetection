@@ -53,12 +53,14 @@ runs; the write-up follows once the work is finished.
   stage (`adapter.py`) so detection can be measured and cached on its own.
 - 493k trainable parameters; the backbone stays frozen and in eval mode.
 - Documented the architecture with a diagram and a stage → file table.
-- Built a synthetic data generator of controlled difficulty: a filled polygon
-  on a flat background, with per-view scale, rotation, perspective, contrast,
-  blur, noise, and an optional shared background. Masks and correspondences are
-  exact by construction; vertex reprojection under the homography is 1e-13 px,
-  and mask-alignment IoU averages 0.974 (min 0.793, edge rasterisation on the
-  smallest shapes).
+- Built a synthetic data generator of controlled difficulty: one filled shape on
+  a flat background, with per-view size, rotation, perspective, contrast, blur,
+  noise, and an optional shared background. Five shape families (polygon,
+  rounded polygon, smooth blob, star, ellipse) over an 8-50% radius range, so
+  the model sees curved and straight boundaries at many scales.
+- Masks and correspondences are exact by construction: vertex reprojection under
+  the homography is 1e-13 px, and mask-alignment IoU averages 0.980 (min 0.919,
+  edge rasterisation on the smallest shapes).
 - Added a contrast x blur grid so difficulty can be inspected directly rather
   than inferred from the parameters.
 

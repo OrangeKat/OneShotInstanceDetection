@@ -104,10 +104,15 @@ with points sized and coloured by boundary score.
 
 ## Synthetic data
 
-`synth.py` produces pairs of a filled polygon on a flat background, with each
-knob set independently per view: number of sides, scale, rotation, perspective,
+`synth.py` produces pairs of a filled shape on a flat background, with each
+knob set independently per view: shape family, size, rotation, perspective,
 contrast against the background, Gaussian blur, and additive noise. Backgrounds
 can differ between views, so the only shared signal is the shape.
+
+Five families, so the model does not learn one shape prior: straight polygons
+(3-10 sides), rounded polygons (Chaikin-smoothed corners), smooth blobs (summed
+radial harmonics), stars (smooth lobes), and ellipses. Sizes run from 8% to 50%
+of the canvas in radius, which is roughly 0.6% to 47% of the area.
 
 ```bash
 uv run python -m osid.model.synth --samples 6              # contact sheet
@@ -129,7 +134,7 @@ knobs are checked rather than assumed:
 `--check` verifies the label two ways. Projecting view A's polygon vertices
 through the homography and comparing them with view B's gives a reprojection
 error of **1e-13 px**, so the correspondence is exact. Warping the mask and
-comparing silhouettes gives IoU **0.974 mean / 0.793 min**; the spread is edge
+comparing silhouettes gives IoU **0.980 mean / 0.919 min**; the spread is edge
 rasterisation, which bites hardest on the smallest shapes, not a label error.
 Polygons are kept inside the canvas, since clipping one view but not the other
 would invalidate the part of the correspondence that falls outside.

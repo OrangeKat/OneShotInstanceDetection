@@ -31,6 +31,7 @@ __all__ = [
 ]
 
 SUPERSAMPLE = 2
+SHAPE_KINDS = ("polygon", "rounded", "blob", "star", "ellipse")
 
 
 @dataclass
@@ -79,8 +80,9 @@ class ShapePairGenerator:
         contrast_range: tuple[float, float] = (0.06, 0.45),
         blur_range: tuple[float, float] = (0.0, 2.0),
         noise_range: tuple[float, float] = (0.0, 0.03),
-        scale_range: tuple[float, float] = (0.15, 0.5),
+        scale_range: tuple[float, float] = (0.08, 0.5),
         same_background: bool = False,
+        shape_kind: str | None = None,
     ) -> None:
         """Configure the generator.
 
@@ -93,6 +95,7 @@ class ShapePairGenerator:
             noise_range: Per-view additive noise sigma.
             scale_range: Polygon radius as a fraction of the canvas.
             same_background: Share one background colour across the views.
+            shape_kind: Force one family, or ``None`` to sample them.
         """
         self.size = size
         self.limit = limit
@@ -102,6 +105,9 @@ class ShapePairGenerator:
         self.noise_range = noise_range
         self.scale_range = scale_range
         self.same_background = same_background
+        if shape_kind is not None and shape_kind not in SHAPE_KINDS:
+            raise ValueError(f"unknown shape kind: {shape_kind}")
+        self.shape_kind = shape_kind
 
     def __len__(self) -> int:
         """Return the number of samples per epoch.
@@ -121,8 +127,8 @@ class ShapePairGenerator:
             A generated pair.
         """
         rng = np.random.default_rng(int(index) + self.seed * 104_729 + 17)
-        sides = int(rng.integers(3, 11))
-        polygon = self._polygon(sides, rng)
+        polygon, kind = self._shape(rng)
+        sides = len(polygon)
 
         background0 = self._colour(rng)
         background1 = background0 if self.same_background else self._colour(rng)
@@ -144,6 +150,7 @@ class ShapePairGenerator:
         )
         homography = transform1 @ np.linalg.inv(transform0)
         meta = {
+            "kind": float(SHAPE_KINDS.index(kind)),
             "sides": float(sides),
             "contrast0": contrast0,
             "contrast1": contrast1,
@@ -163,19 +170,66 @@ class ShapePairGenerator:
             meta=meta,
         )
 
-    def _polygon(self, sides: int, rng: np.random.Generator) -> np.ndarray:
-        """Sample a polygon in canonical coordinates.
+    def _shape(
+        self,
+        rng: np.random.Generator,
+    ) -> tuple[np.ndarray, str]:
+        """Sample a closed silhouette in canonical coordinates.
+
+        Five families, so the model sees straight edges, rounded corners,
+        smooth lobes, sharp stars, and stretched ellipses rather than one shape
+        prior:
 
         Args:
-            sides: Number of vertices.
             rng: Random generator.
 
         Returns:
-            ``(sides, 2)`` vertices on the unit circle with jittered radii.
+            ``(N, 2)`` points on the boundary and the family name.
         """
-        angles = np.sort(rng.uniform(0, 2 * np.pi, sides))
-        radii = rng.uniform(0.75, 1.0, sides)
-        return np.stack([np.cos(angles) * radii, np.sin(angles) * radii], axis=1)
+        kind = (
+            self.shape_kind
+            if self.shape_kind is not None
+            else SHAPE_KINDS[int(rng.integers(len(SHAPE_KINDS)))]
+        )
+        if kind == "polygon":
+            sides = int(rng.integers(3, 11))
+            angles = np.sort(rng.uniform(0, 2 * np.pi, sides))
+            radii = rng.uniform(0.75, 1.0, sides)
+            points = np.stack([np.cos(angles) * radii, np.sin(angles) * radii], axis=1)
+            return _normalise(points), kind
+
+        if kind == "rounded":
+            sides = int(rng.integers(3, 9))
+            angles = np.sort(rng.uniform(0, 2 * np.pi, sides))
+            radii = rng.uniform(0.8, 1.0, sides)
+            points = np.stack([np.cos(angles) * radii, np.sin(angles) * radii], axis=1)
+            return _normalise(_chaikin(points, iterations=2)), kind
+
+        if kind == "blob":
+            theta = np.linspace(0, 2 * np.pi, 160, endpoint=False)
+            radius = np.ones_like(theta)
+            for harmonic in range(2, int(rng.integers(4, 7))):
+                amplitude = float(rng.uniform(0.04, 0.22))
+                phase = float(rng.uniform(0, 2 * np.pi))
+                radius += amplitude * np.cos(harmonic * theta + phase)
+            radius = np.clip(radius, 0.25, None)
+            points = np.stack([np.cos(theta) * radius, np.sin(theta) * radius], axis=1)
+            return _normalise(points), kind
+
+        if kind == "star":
+            lobes = int(rng.integers(4, 9))
+            theta = np.linspace(0, 2 * np.pi, 200, endpoint=False)
+            depth = float(rng.uniform(0.35, 0.6))
+            radius = 1.0 - depth * (0.5 + 0.5 * np.cos(lobes * theta))
+            points = np.stack([np.cos(theta) * radius, np.sin(theta) * radius], axis=1)
+            return _normalise(points), kind
+
+        theta = np.linspace(0, 2 * np.pi, 160, endpoint=False)
+        aspect = float(rng.uniform(0.35, 1.0))
+        points = np.stack([np.cos(theta), np.sin(theta) * aspect], axis=1)
+        if rng.random() < 0.5:
+            points = points[:, ::-1]
+        return _normalise(points), kind
 
     def _colour(self, rng: np.random.Generator) -> np.ndarray:
         """Sample a background colour.
@@ -211,7 +265,8 @@ class ShapePairGenerator:
         # A shape that cannot fit would be clipped, which breaks the part of the
         # correspondence label that falls outside the canvas.
         radius = min(radius, (self.size / 2.0 - 3.0) / max(max_norm, 1e-6))
-        extent = radius * max_norm
+        # Margin absorbs the mild perspective, which pushes points outwards.
+        extent = 1.08 * radius * max_norm
         low = extent + 2.0
         high = self.size - extent - 2.0
         if low >= high:
@@ -305,6 +360,38 @@ class ShapePairGenerator:
         )
         projected = homogeneous @ transform.T
         return projected[:, :2] / projected[:, 2:3]
+
+
+def _normalise(points: np.ndarray) -> np.ndarray:
+    """Scale points so the largest radius is one.
+
+    Args:
+        points: ``(N, 2)`` boundary points.
+
+    Returns:
+        ``(N, 2)`` points with maximum radius 1.
+    """
+    radius = float(np.linalg.norm(points, axis=1).max())
+    return points / max(radius, 1e-6)
+
+
+def _chaikin(points: np.ndarray, iterations: int = 2) -> np.ndarray:
+    """Round the corners of a closed polygon.
+
+    Args:
+        points: ``(N, 2)`` polygon vertices.
+        iterations: Corner-cutting passes.
+
+    Returns:
+        A denser, smoother closed boundary.
+    """
+    smoothed = points
+    for _ in range(iterations):
+        shifted = np.roll(smoothed, -1, axis=0)
+        first = 0.75 * smoothed + 0.25 * shifted
+        second = 0.25 * smoothed + 0.75 * shifted
+        smoothed = np.stack([first, second], axis=1).reshape(-1, 2)
+    return smoothed
 
 
 def boundary_band(mask: np.ndarray, width: int = 2) -> np.ndarray:
@@ -418,6 +505,7 @@ def _write_grid(path: Path, *, size: int) -> None:
                 blur_range=(blur, blur),
                 noise_range=(0.015, 0.015),
                 same_background=True,
+                shape_kind="blob",
             )
             pair = generator[0]
             cell = pair.image1.copy()
