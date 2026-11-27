@@ -43,6 +43,8 @@ class ShapePair:
         mask0: Polygon silhouette in view 0, uint8 0/1.
         mask1: Polygon silhouette in view 1.
         homography: ``3 x 3`` map from view 0 to view 1.
+        points0: Polygon vertices in view 0, for verifying the label.
+        points1: Polygon vertices in view 1.
         meta: The parameters used, for slicing results by difficulty.
     """
 
@@ -51,6 +53,8 @@ class ShapePair:
     mask0: np.ndarray
     mask1: np.ndarray
     homography: np.ndarray
+    points0: np.ndarray
+    points1: np.ndarray
     meta: dict[str, float]
 
 
@@ -154,6 +158,8 @@ class ShapePairGenerator:
             mask0=mask0,
             mask1=mask1,
             homography=homography.astype(np.float64),
+            points0=self._apply(transform0, polygon),
+            points1=self._apply(transform1, polygon),
             meta=meta,
         )
 
@@ -201,7 +207,11 @@ class ShapePairGenerator:
         """
         radius = float(rng.uniform(*self.scale_range)) * self.size
         angle = float(rng.uniform(-180.0, 180.0))
-        extent = 1.06 * radius * float(np.linalg.norm(polygon, axis=1).max())
+        max_norm = float(np.linalg.norm(polygon, axis=1).max())
+        # A shape that cannot fit would be clipped, which breaks the part of the
+        # correspondence label that falls outside the canvas.
+        radius = min(radius, (self.size / 2.0 - 3.0) / max(max_norm, 1e-6))
+        extent = radius * max_norm
         low = extent + 2.0
         high = self.size - extent - 2.0
         if low >= high:
@@ -346,6 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     generator = ShapePairGenerator(size=args.size, limit=args.samples, seed=1)
     if args.check:
         ious = []
+        errors = []
         for index in range(args.samples):
             pair = generator[index]
             warped = cv2.warpPerspective(
@@ -357,7 +368,16 @@ def main(argv: list[str] | None = None) -> int:
             intersection = int(np.logical_and(warped > 0, pair.mask1 > 0).sum())
             union = int(np.logical_or(warped > 0, pair.mask1 > 0).sum())
             ious.append(intersection / union if union else 0.0)
-        print(f"mask alignment IoU: mean {np.mean(ious):.3f} min {np.min(ious):.3f}")
+            projected = ShapePairGenerator._apply(pair.homography, pair.points0)
+            errors.append(float(np.abs(projected - pair.points1).max()))
+        print(
+            f"mask alignment IoU: mean {np.mean(ious):.3f} min {np.min(ious):.3f} "
+            "(edge resampling; small shapes score lower)"
+        )
+        print(
+            f"vertex reprojection error: max {max(errors):.2e} px, "
+            f"mean {np.mean(errors):.2e} px"
+        )
 
     if args.grid:
         _write_grid(args.output, size=args.size // 2)

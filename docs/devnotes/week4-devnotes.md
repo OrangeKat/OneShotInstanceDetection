@@ -56,8 +56,9 @@ runs; the write-up follows once the work is finished.
 - Built a synthetic data generator of controlled difficulty: a filled polygon
   on a flat background, with per-view scale, rotation, perspective, contrast,
   blur, noise, and an optional shared background. Masks and correspondences are
-  exact by construction; mask alignment under the homography reports IoU 0.988
-  mean / 0.981 min.
+  exact by construction; vertex reprojection under the homography is 1e-13 px,
+  and mask-alignment IoU averages 0.974 (min 0.793, edge rasterisation on the
+  smallest shapes).
 - Added a contrast x blur grid so difficulty can be inspected directly rather
   than inferred from the parameters.
 

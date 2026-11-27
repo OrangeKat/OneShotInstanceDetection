@@ -115,11 +115,13 @@ uv run python -m osid.model.synth --samples 20 --check    # label sanity
 uv run python -m osid.model.synth --grid                  # contrast × blur grid
 ```
 
-`--check` warps view A's mask through the generated homography and compares it
-with view B's, reporting mask IoU **0.988 mean / 0.981 min** over 20 samples:
-resampling error, not label error. Polygons are kept fully inside the canvas,
-since clipping one view but not the other would invalidate the correspondence
-for the clipped part.
+`--check` verifies the label two ways. Projecting view A's polygon vertices
+through the homography and comparing them with view B's gives a reprojection
+error of **1e-13 px**, so the correspondence is exact. Warping the mask and
+comparing silhouettes gives IoU **0.974 mean / 0.793 min**; the spread is edge
+rasterisation, which bites hardest on the smallest shapes, not a label error.
+Polygons are kept inside the canvas, since clipping one view but not the other
+would invalidate the part of the correspondence that falls outside.
 
 What this generator is for: isolating capability. If the model cannot find a
 high-contrast polygon and match it under blur and noise, it will not do better
