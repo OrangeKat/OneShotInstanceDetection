@@ -113,6 +113,36 @@ FlickrLogos-32, 150 positives and 75 negatives sampled from the manifest:
 Stages: `no_matches` 146 (65%), `true_negative` 75 (33%), `too_few_matches` 4
 (2%). The failure is not a wrong box; matching produces almost nothing.
 
+### Detector alone, on real images
+
+The benchmark result above measures the matcher, not the detector. Isolating the
+detector on 60 real queries:
+
+| Measurement | Median | Mean |
+|---|---:|---:|
+| Keypoints per query | 140.5 | 149.3 |
+| Keypoints inside the GT box | 0.104 | 0.222 |
+| Gradient percentile at keypoints | 0.744 | 0.735 |
+| SIFT gradient percentile (same images) | 0.813 | 0.774 |
+| Random-pixel gradient percentile | 0.502 | 0.476 |
+
+![Detector keypoints on real queries, with the GT box outlined](images/week4/detector_gallery.png)
+
+Two readings. On the positive side, keypoints sit on edges well above chance
+(0.74 against 0.50 for random pixels), and close to SIFT (0.81), so the
+boundary prior survives the synthetic-to-real gap.
+
+On the negative side, only 10% of keypoints fall inside the annotated instance
+box. The detector is class-agnostic: it fires on every strong edge in the frame,
+and the object is one edge system among many. In the synthetic data the shape
+was the only edge, so this never showed up. It means a matcher does not face a
+clean correspondence set with a few outliers; it faces roughly nine distractors
+per object point, which is a much harder rejection problem than the synthetic
+setup ever exercised.
+
+It also explains the low keypoint count: `top_k` is 512 but the 0.3 threshold and
+local-maximum test keep only about 140 points per frame.
+
 ### Diagnosis
 
 The detector works: 238 keypoints on a reference crop, 151 on a query, and
