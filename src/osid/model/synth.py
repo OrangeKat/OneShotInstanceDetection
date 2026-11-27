@@ -1,19 +1,18 @@
-"""Synthetic pairs: one object pasted into two different backgrounds.
+"""Synthetic pairs of shapes on flat backgrounds.
 
-Training a detector/descriptor needs three things the benchmark data does not
-give: a mask per image, exact correspondences between two views, and enough
-pairs to learn from. Pasting a reference crop into random backgrounds produces
-all three exactly — the transform is known, so it *is* the correspondence.
+The point of this generator is control, not realism: a filled polygon on a
+single-colour background, with the contrast, blur, noise, scale, rotation and
+perspective of each view set separately. Everything the model needs to learn is
+exact by construction — the silhouette is the mask and the placement transform
+*is* the correspondence between the two views.
 
 Each sample is:
 
-- view A: an object crop scaled, rotated, and pasted into background A;
-- view B: the same object pasted into background B with a different transform;
-- ``homography``: the map from A to B, valid on the object;
-- ``mask``: the object's silhouette in each view, with occlusions removed.
-
-Backgrounds differ between the views on purpose: otherwise the model can match
-background instead of the object.
+- view A and view B: the same polygon, placed independently, on flat
+  backgrounds, with different contrast, blur and noise;
+- ``homography``: the map from view A to view B, exact for the polygon;
+- ``mask``: the polygon silhouette in each view;
+- ``meta``: the knobs used, so results can be sliced by difficulty later.
 """
 
 from __future__ import annotations
@@ -25,25 +24,26 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from osid.utils.dataset import InstanceDataset
-
 __all__ = [
-    "SyntheticPair",
-    "SyntheticPairGenerator",
+    "ShapePair",
+    "ShapePairGenerator",
     "boundary_band",
 ]
 
+SUPERSAMPLE = 2
+
 
 @dataclass
-class SyntheticPair:
+class ShapePair:
     """One generated training pair.
 
     Attributes:
         image0: First view, ``(size, size, 3)`` uint8 RGB.
         image1: Second view.
-        mask0: Object silhouette in view 0, uint8 0/1.
-        mask1: Object silhouette in view 1, occlusions removed.
+        mask0: Polygon silhouette in view 0, uint8 0/1.
+        mask1: Polygon silhouette in view 1.
         homography: ``3 x 3`` map from view 0 to view 1.
+        meta: The parameters used, for slicing results by difficulty.
     """
 
     image0: np.ndarray
@@ -51,46 +51,53 @@ class SyntheticPair:
     mask0: np.ndarray
     mask1: np.ndarray
     homography: np.ndarray
+    meta: dict[str, float]
 
 
-class SyntheticPairGenerator:
-    """Generates object-in-background pairs from a manifest of crops.
+class ShapePairGenerator:
+    """Generates shape pairs with controllable difficulty.
 
     Attributes:
         size: Canvas side in pixels.
-        limit: Maximum samples per epoch.
-        rng: Random generator, seeded for reproducibility.
+        limit: Samples per epoch.
+        contrast_range: Luminance difference between shape and background.
+        blur_range: Gaussian sigma applied per view.
+        noise_range: Gaussian noise sigma applied per view.
+        same_background: Whether both views share a background colour.
     """
 
     def __init__(
         self,
-        manifest: Path,
         *,
         size: int = 448,
         limit: int = 4000,
         seed: int = 0,
-        background_pool: int = 64,
-        occlusion_probability: float = 0.35,
+        contrast_range: tuple[float, float] = (0.06, 0.45),
+        blur_range: tuple[float, float] = (0.0, 2.0),
+        noise_range: tuple[float, float] = (0.0, 0.03),
+        scale_range: tuple[float, float] = (0.15, 0.5),
+        same_background: bool = False,
     ) -> None:
-        """Load the object crops and a small pool of backgrounds.
+        """Configure the generator.
 
         Args:
-            manifest: Dataset manifest used for crops and backgrounds.
             size: Square canvas side.
             limit: Samples per epoch.
-            seed: Seed for the generator.
-            background_pool: Number of images kept in memory as backgrounds.
-            occlusion_probability: Chance of covering part of the object.
+            seed: Base seed for reproducibility.
+            contrast_range: Luminance difference between shape and background.
+            blur_range: Per-view Gaussian blur sigma.
+            noise_range: Per-view additive noise sigma.
+            scale_range: Polygon radius as a fraction of the canvas.
+            same_background: Share one background colour across the views.
         """
-        self.dataset = InstanceDataset(manifest, load_images=False)
         self.size = size
         self.limit = limit
-        self.rng = np.random.default_rng(seed)
-        self.objects = [s for s in self.dataset.samples if s.reference_path.exists()]
-        if not self.objects:
-            raise ValueError(f"no reference crops found via {manifest}")
-        self.backgrounds = self._load_backgrounds(background_pool)
-        self.occlusion_probability = occlusion_probability
+        self.seed = seed
+        self.contrast_range = contrast_range
+        self.blur_range = blur_range
+        self.noise_range = noise_range
+        self.scale_range = scale_range
+        self.same_background = same_background
 
     def __len__(self) -> int:
         """Return the number of samples per epoch.
@@ -100,120 +107,107 @@ class SyntheticPairGenerator:
         """
         return self.limit
 
-    def __getitem__(self, index: int) -> SyntheticPair:
+    def __getitem__(self, index: int) -> ShapePair:
         """Generate one pair.
 
         Args:
-            index: Sample index, used to seed the RNG so the sample is
-                reproducible.
+            index: Sample index; seeds the RNG so a sample is reproducible.
 
         Returns:
             A generated pair.
         """
-        rng = np.random.default_rng(int(index) + 7919)
-        sample = self.objects[int(rng.integers(len(self.objects)))]
-        object_rgb, object_mask = self._load_object(sample, rng)
+        rng = np.random.default_rng(int(index) + self.seed * 104_729 + 17)
+        sides = int(rng.integers(3, 11))
+        polygon = self._polygon(sides, rng)
 
-        transform0 = self._place_transform(object_rgb.shape[:2], rng)
-        transform1 = self._place_transform(object_rgb.shape[:2], rng)
-        image0, mask0 = self._composite(object_rgb, object_mask, transform0, rng)
-        image1, mask1 = self._composite(object_rgb, object_mask, transform1, rng)
+        background0 = self._colour(rng)
+        background1 = background0 if self.same_background else self._colour(rng)
 
+        contrast0 = float(rng.uniform(*self.contrast_range))
+        contrast1 = float(rng.uniform(*self.contrast_range))
+        blur0 = float(rng.uniform(*self.blur_range))
+        blur1 = float(rng.uniform(*self.blur_range))
+        noise0 = float(rng.uniform(*self.noise_range))
+        noise1 = float(rng.uniform(*self.noise_range))
+
+        transform0 = self._placement(polygon, rng)
+        transform1 = self._placement(polygon, rng)
+        image0, mask0 = self._render(
+            polygon, transform0, background0, contrast0, blur0, noise0, rng
+        )
+        image1, mask1 = self._render(
+            polygon, transform1, background1, contrast1, blur1, noise1, rng
+        )
         homography = transform1 @ np.linalg.inv(transform0)
-        image0 = self._degrade(image0, rng)
-        image1 = self._degrade(image1, rng)
-        return SyntheticPair(
+        meta = {
+            "sides": float(sides),
+            "contrast0": contrast0,
+            "contrast1": contrast1,
+            "blur0": blur0,
+            "blur1": blur1,
+            "noise0": noise0,
+            "noise1": noise1,
+        }
+        return ShapePair(
             image0=image0,
             image1=image1,
             mask0=mask0,
             mask1=mask1,
             homography=homography.astype(np.float64),
+            meta=meta,
         )
 
-    def _load_backgrounds(self, count: int) -> list[np.ndarray]:
-        """Load a pool of background images.
+    def _polygon(self, sides: int, rng: np.random.Generator) -> np.ndarray:
+        """Sample a polygon in canonical coordinates.
 
         Args:
-            count: How many images to keep.
+            sides: Number of vertices.
+            rng: Random generator.
 
         Returns:
-            RGB images.
+            ``(sides, 2)`` vertices on the unit circle with jittered radii.
         """
-        pool: list[np.ndarray] = []
-        for sample in self.objects[:count]:
-            image = cv2.imread(str(sample.query_path), cv2.IMREAD_COLOR)
-            if image is not None:
-                pool.append(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        if not pool:
-            pool.append(np.zeros((self.size, self.size, 3), dtype=np.uint8))
-        return pool
+        angles = np.sort(rng.uniform(0, 2 * np.pi, sides))
+        radii = rng.uniform(0.75, 1.0, sides)
+        return np.stack([np.cos(angles) * radii, np.sin(angles) * radii], axis=1)
 
-    def _load_object(
-        self,
-        sample: object,
-        rng: np.random.Generator,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Load one reference crop and its silhouette.
+    def _colour(self, rng: np.random.Generator) -> np.ndarray:
+        """Sample a background colour.
 
         Args:
-            sample: Dataset sample.
-            rng: Random generator, used to jitter the crop border.
+            rng: Random generator.
 
         Returns:
-            RGB crop and a uint8 silhouette.
+            RGB colour in ``[0, 1]``.
         """
-        loaded = self.dataset.load(sample)  # type: ignore[arg-type]
-        crop = self.dataset.reference_crop(loaded)
-        mask = np.ones(crop.shape[:2], dtype=np.uint8)
-        if rng.random() < 0.5:
-            margin = int(0.04 * min(crop.shape[:2]))
-            if margin > 1:
-                mask[:margin, :] = 0
-                mask[-margin:, :] = 0
-                mask[:, :margin] = 0
-                mask[:, -margin:] = 0
-        return crop, mask
+        return rng.uniform(0.15, 0.85, 3).astype(np.float32)
 
-    def _place_transform(
+    def _placement(
         self,
-        crop_shape: tuple[int, int],
+        polygon: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
         """Sample a placement transform for one view.
 
-        The crop is scaled so its long side covers a fraction of the canvas,
-        rotated about its own centre, then moved onto the canvas.
+        The polygon is kept fully inside the canvas: clipping one view but not
+        the other would break the correspondence label for the clipped part.
 
         Args:
-            crop_shape: ``(height, width)`` of the object crop.
+            polygon: Canonical polygon vertices.
             rng: Random generator.
 
         Returns:
-            ``3 x 3`` transform from crop coordinates to canvas coordinates.
+            ``3 x 3`` transform from canonical polygon coordinates to canvas.
         """
-        height, width = crop_shape
-        long_side = max(height, width)
-        target = float(rng.uniform(0.2, 0.5)) * self.size
-        scale = target / long_side
-        angle = float(rng.uniform(-25.0, 25.0))
-        # Keep the rotated crop fully inside the canvas, so the two views show
-        # the same object extent and the correspondence labels stay exact.
-        scaled_w = width * scale
-        scaled_h = height * scale
-        half_diag = 0.5 * float(np.hypot(scaled_w, scaled_h))
-        low = half_diag + 2.0
-        high = self.size - half_diag - 2.0
+        radius = float(rng.uniform(*self.scale_range)) * self.size
+        angle = float(rng.uniform(-180.0, 180.0))
+        extent = 1.06 * radius * float(np.linalg.norm(polygon, axis=1).max())
+        low = extent + 2.0
+        high = self.size - extent - 2.0
         if low >= high:
-            centre = (self.size / 2.0, self.size / 2.0)
+            centre = np.array([self.size / 2.0, self.size / 2.0])
         else:
-            centre = (
-                float(rng.uniform(low, high)),
-                float(rng.uniform(low, high)),
-            )
-        to_origin = np.array(
-            [[1.0, 0.0, -width / 2], [0.0, 1.0, -height / 2], [0.0, 0.0, 1.0]]
-        )
-        scaling = np.diag([scale, scale, 1.0])
+            centre = rng.uniform(low, high, 2)
         radians = np.deg2rad(angle)
         rotation = np.array(
             [
@@ -222,164 +216,85 @@ class SyntheticPairGenerator:
                 [0.0, 0.0, 1.0],
             ]
         )
-        to_centre = np.array(
-            [[1.0, 0.0, centre[0]], [0.0, 1.0, centre[1]], [0.0, 0.0, 1.0]]
-        )
+        scaling = np.diag([radius, radius, 1.0])
         perspective = np.array(
             [
                 [1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
-                [rng.normal(0.0, 4e-5), rng.normal(0.0, 4e-5), 1.0],
+                [rng.normal(0.0, 8e-5), rng.normal(0.0, 8e-5), 1.0],
             ]
         )
-        return to_centre @ perspective @ rotation @ scaling @ to_origin
+        translation = np.array(
+            [[1.0, 0.0, centre[0]], [0.0, 1.0, centre[1]], [0.0, 0.0, 1.0]]
+        )
+        return translation @ perspective @ rotation @ scaling
 
-    def _composite(
+    def _render(
         self,
-        crop: np.ndarray,
-        mask: np.ndarray,
+        polygon: np.ndarray,
         transform: np.ndarray,
+        background: np.ndarray,
+        contrast: float,
+        blur: float,
+        noise: float,
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Paste the object into a random background.
+        """Render one view.
 
         Args:
-            crop: Object RGB crop.
-            mask: Object silhouette.
-            transform: Crop-to-canvas transform.
-            rng: Random generator.
+            polygon: Canonical polygon vertices.
+            transform: Canonical-to-canvas transform.
+            background: Background colour in ``[0, 1]``.
+            contrast: Luminance difference between shape and background.
+            blur: Gaussian sigma, applied after compositing.
+            noise: Additive Gaussian sigma.
+            rng: Random generator, used for the contrast direction.
 
         Returns:
-            The composed RGB image and the object silhouette on the canvas.
+            RGB uint8 image and binary silhouette.
         """
-        source = crop.astype(np.float32)
-        source = source / 255.0
-        normalised = np.zeros_like(source)
-        normalised[:] = source
-        warped = cv2.warpPerspective(
-            normalised,
-            transform,
-            (self.size, self.size),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-        )
-        warped_mask = cv2.warpPerspective(
-            mask,
-            transform,
-            (self.size, self.size),
-            flags=cv2.INTER_NEAREST,
-            borderMode=cv2.BORDER_CONSTANT,
-        )
-        background = self._background(rng)
-        feather = cv2.GaussianBlur(warped_mask.astype(np.float32), (0, 0), 1.2)[
-            :, :, None
-        ]
-        composed = warped * feather + background * (1.0 - feather)
-        composed = np.clip(composed, 0.0, 1.0)
-        image = (composed * 255.0).astype(np.uint8)
+        points = self._apply(transform, polygon)
+        high = self.size * SUPERSAMPLE
+        canvas = np.zeros((high, high), dtype=np.uint8)
+        cv2.fillPoly(canvas, [np.round(points * SUPERSAMPLE).astype(np.int32)], 255)
+        alpha = cv2.resize(canvas, (self.size, self.size), interpolation=cv2.INTER_AREA)
+        alpha = alpha.astype(np.float32) / 255.0
 
-        occlusion = self._occlusion(transform, mask.shape, rng)
-        if occlusion is not None:
-            texture = cv2.GaussianBlur(image, (0, 0), 9)
-            image[occlusion] = texture[occlusion]
-            warped_mask[occlusion] = 0
-        return image, warped_mask
+        direction = rng.normal(0.0, 1.0, 3)
+        direction /= max(float(np.linalg.norm(direction)), 1e-6)
+        foreground = np.clip(
+            background + direction.astype(np.float32) * contrast,
+            0.0,
+            1.0,
+        )
+        image = (
+            background[None, None, :] * (1.0 - alpha[:, :, None])
+            + foreground[None, None, :] * alpha[:, :, None]
+        )
+        if blur > 0:
+            image = cv2.GaussianBlur(image, (0, 0), blur)
+        if noise > 0:
+            image = image + rng.normal(0.0, noise, image.shape).astype(np.float32)
+        image = np.clip(image, 0.0, 1.0)
+        return (image * 255.0).astype(np.uint8), (alpha > 0.5).astype(np.uint8)
 
-    def _background(self, rng: np.random.Generator) -> np.ndarray:
-        """Return a random background patch in ``[0, 1]``.
+    @staticmethod
+    def _apply(transform: np.ndarray, points: np.ndarray) -> np.ndarray:
+        """Apply a homography to 2-D points.
 
         Args:
-            rng: Random generator.
+            transform: ``3 x 3`` matrix.
+            points: ``(N, 2)`` points.
 
         Returns:
-            ``(size, size, 3)`` float image.
+            ``(N, 2)`` transformed points.
         """
-        if rng.random() < 0.15:
-            base = rng.normal(0.5, 0.08, (self.size, self.size, 1))
-            tint = rng.normal(0.0, 0.03, (1, 1, 3))
-            noise = np.clip(base + tint, 0.0, 1.0)
-            return noise.astype(np.float32)
-        image = self.backgrounds[int(rng.integers(len(self.backgrounds)))]
-        height, width = image.shape[:2]
-        side = min(height, width)
-        top = int(rng.integers(0, max(1, height - side + 1)))
-        left = int(rng.integers(0, max(1, width - side + 1)))
-        patch = image[top : top + side, left : left + side]
-        patch = cv2.resize(patch, (self.size, self.size), interpolation=cv2.INTER_AREA)
-        return patch.astype(np.float32) / 255.0
-
-    def _occlusion(
-        self,
-        transform: np.ndarray,
-        shape: tuple[int, int],
-        rng: np.random.Generator,
-    ) -> np.ndarray | None:
-        """Return a boolean mask of an occluding rectangle, or ``None``.
-
-        Args:
-            transform: Object placement, used to place the occluder on the object.
-            shape: Object crop shape.
-            rng: Random generator.
-
-        Returns:
-            Boolean mask of the occluded pixels, or ``None``.
-        """
-        if rng.random() > self.occlusion_probability:
-            return None
-        height, width = shape
-        x0 = int(rng.integers(0, max(1, width // 2)))
-        y0 = int(rng.integers(0, max(1, height // 2)))
-        x1 = int(min(width, x0 + rng.integers(width // 4, max(width // 4 + 1, width))))
-        y1 = int(
-            min(height, y0 + rng.integers(height // 4, max(height // 4 + 1, height)))
+        homogeneous = np.concatenate(
+            [points, np.ones((len(points), 1))],
+            axis=1,
         )
-        if x1 <= x0 or y1 <= y0:
-            return None
-        patch = np.ones((y1 - y0, x1 - x0), dtype=np.uint8)
-        warped = cv2.warpPerspective(
-            patch,
-            transform,
-            (self.size, self.size),
-            flags=cv2.INTER_NEAREST,
-        )
-        return warped.astype(bool)
-
-    def _degrade(self, image: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-        """Apply photometric and sensor noise.
-
-        Args:
-            image: RGB uint8 image.
-            rng: Random generator.
-
-        Returns:
-            Degraded RGB uint8 image.
-        """
-        float_image = image.astype(np.float32) / 255.0
-        float_image *= float(rng.uniform(0.75, 1.25))
-        float_image += float(rng.uniform(-0.08, 0.08))
-        float_image = np.clip(float_image, 0.0, 1.0)
-        float_image = float_image ** float(rng.uniform(0.85, 1.15))
-
-        if rng.random() < 0.35:
-            sigma = float(rng.uniform(0.4, 1.6))
-            float_image = cv2.GaussianBlur(float_image, (0, 0), sigma)
-        if rng.random() < 0.35:
-            float_image += rng.normal(0.0, rng.uniform(0.005, 0.03), float_image.shape)
-        float_image = np.clip(float_image, 0.0, 1.0)
-        image = (float_image * 255.0).astype(np.uint8)
-
-        if rng.random() < 0.3:
-            quality = int(rng.integers(35, 90))
-            ok, encoded = cv2.imencode(
-                ".jpg",
-                cv2.cvtColor(image, cv2.COLOR_RGB2BGR),
-                [int(cv2.IMWRITE_JPEG_QUALITY), quality],
-            )
-            if ok:
-                image = cv2.cvtColor(
-                    cv2.imdecode(encoded, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
-                )
-        return image
+        projected = homogeneous @ transform.T
+        return projected[:, :2] / projected[:, 2:3]
 
 
 def boundary_band(mask: np.ndarray, width: int = 2) -> np.ndarray:
@@ -400,7 +315,7 @@ def boundary_band(mask: np.ndarray, width: int = 2) -> np.ndarray:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Generate a few samples and save a contact sheet.
+    """Render a difficulty grid or check label alignment.
 
     Args:
         argv: Optional argument list.
@@ -408,44 +323,27 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
-    parser = argparse.ArgumentParser(description="Preview synthetic pairs.")
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=Path("data/flickrlogos32/manifest.json"),
-    )
-    parser.add_argument("--samples", type=int, default=3)
+    parser = argparse.ArgumentParser(description="Preview synthetic shape pairs.")
+    parser.add_argument("--samples", type=int, default=6)
+    parser.add_argument("--size", type=int, default=448)
     parser.add_argument(
         "--check",
         action="store_true",
         help="Report mask alignment under the generated homographies.",
     )
-    parser.add_argument("--size", type=int, default=448)
+    parser.add_argument(
+        "--grid",
+        action="store_true",
+        help="Render a contrast and blur grid instead of random pairs.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("outputs/synthetic-preview.png"),
+        default=Path("outputs/synthetic-shapes.png"),
     )
     args = parser.parse_args(argv)
 
-    generator = SyntheticPairGenerator(
-        args.manifest,
-        size=args.size,
-        limit=args.samples,
-        occlusion_probability=0.0 if args.check else 0.35,
-    )
-    rows = []
-    for index in range(args.samples):
-        pair = generator[index]
-        rows.append(
-            np.concatenate(
-                [
-                    _annotate(pair.image0, pair.mask0),
-                    _annotate(pair.image1, pair.mask1),
-                ],
-                axis=1,
-            )
-        )
+    generator = ShapePairGenerator(size=args.size, limit=args.samples, seed=1)
     if args.check:
         ious = []
         for index in range(args.samples):
@@ -453,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
             warped = cv2.warpPerspective(
                 pair.mask0,
                 pair.homography,
-                (pair.image0.shape[1], pair.image1.shape[0]),
+                (args.size, args.size),
                 flags=cv2.INTER_NEAREST,
             )
             intersection = int(np.logical_and(warped > 0, pair.mask1 > 0).sum())
@@ -461,26 +359,95 @@ def main(argv: list[str] | None = None) -> int:
             ious.append(intersection / union if union else 0.0)
         print(f"mask alignment IoU: mean {np.mean(ious):.3f} min {np.min(ious):.3f}")
 
-    sheet = np.concatenate(rows, axis=0)
+    if args.grid:
+        _write_grid(args.output, size=args.size // 2)
+        return 0
+
+    cells = []
+    for index in range(args.samples):
+        pair = generator[index]
+        left = _annotate(pair.image0, pair.mask0, pair.meta, "A")
+        right = _annotate(pair.image1, pair.mask1, pair.meta, "B")
+        cells.append(np.concatenate([left, right], axis=1))
+    sheet = np.concatenate(cells, axis=0)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(args.output), cv2.cvtColor(sheet, cv2.COLOR_RGB2BGR))
-    print(f"wrote {args.output} ({len(rows)} pairs, {args.size}px)")
+    print(f"wrote {args.output}")
     return 0
 
 
-def _annotate(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Outline the object silhouette for the preview.
+def _write_grid(path: Path, *, size: int) -> None:
+    """Render a grid where only contrast and blur change.
+
+    Args:
+        path: Output image path.
+        size: Cell side in pixels.
+    """
+    contrasts = [0.04, 0.10, 0.22, 0.40]
+    blurs = [0.0, 1.2, 2.4]
+    rows = []
+    for blur in blurs:
+        cells = []
+        for contrast in contrasts:
+            generator = ShapePairGenerator(
+                size=size,
+                limit=1,
+                seed=7,
+                contrast_range=(contrast, contrast),
+                blur_range=(blur, blur),
+                noise_range=(0.015, 0.015),
+                same_background=True,
+            )
+            pair = generator[0]
+            cell = pair.image1.copy()
+            contours, _ = cv2.findContours(
+                pair.mask1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            cv2.drawContours(cell, contours, -1, (60, 220, 90), 1)
+            cv2.putText(
+                cell,
+                f"contrast {contrast:.2f}  blur {blur:.1f}",
+                (6, size - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.38,
+                (255, 255, 255),
+                1,
+            )
+            cells.append(cell)
+        rows.append(np.concatenate(cells, axis=1))
+    sheet = np.concatenate(rows, axis=0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(path), cv2.cvtColor(sheet, cv2.COLOR_RGB2BGR))
+    print(f"wrote {path} ({len(contrasts)}x{len(blurs)} grid)")
+
+
+def _annotate(
+    image: np.ndarray,
+    mask: np.ndarray,
+    meta: dict[str, float],
+    label: str,
+) -> np.ndarray:
+    """Draw the silhouette and the difficulty knobs.
 
     Args:
         image: RGB image.
         mask: Binary silhouette.
+        meta: Difficulty settings.
+        label: ``A`` or ``B``.
 
     Returns:
         Annotated RGB image.
     """
     view = image.copy()
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(view, contours, -1, (255, 90, 60), 1)
+    cv2.drawContours(view, contours, -1, (60, 220, 90), 1)
+    suffix = "0" if label == "A" else "1"
+    text = (
+        f"{label}  contrast {meta[f'contrast{suffix}']:.2f}  "
+        f"sigma {meta[f'blur{suffix}']:.1f}  "
+        f"noise {meta[f'noise{suffix}']:.3f}"
+    )
+    cv2.putText(view, text, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
     return view
 
 

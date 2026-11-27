@@ -104,25 +104,28 @@ with points sized and coloured by boundary score.
 
 ## Synthetic data
 
-`synth.py` produces training pairs without labels from the benchmark: one
-reference crop is pasted into two different backgrounds with independent
-scale, rotation, and mild perspective, then degraded with brightness, blur,
-noise, and JPEG. The paste transform is known, so the homography *is* the
-correspondence label, and the object silhouette gives the boundary target.
+`synth.py` produces pairs of a filled polygon on a flat background, with each
+knob set independently per view: number of sides, scale, rotation, perspective,
+contrast against the background, Gaussian blur, and additive noise. Backgrounds
+can differ between views, so the only shared signal is the shape.
 
 ```bash
-uv run python -m osid.model.synth --samples 12            # contact sheet
+uv run python -m osid.model.synth --samples 6             # contact sheet
 uv run python -m osid.model.synth --samples 20 --check    # label sanity
+uv run python -m osid.model.synth --grid                  # contrast × blur grid
 ```
 
 `--check` warps view A's mask through the generated homography and compares it
-with view B's mask. It reports mean 0.990 and min 0.982 across 20 samples, which
-is resampling error rather than label error. Occlusion is disabled for that
-check, since the two views occlude different regions.
+with view B's, reporting mask IoU **0.988 mean / 0.981 min** over 20 samples:
+resampling error, not label error. Polygons are kept fully inside the canvas,
+since clipping one view but not the other would invalidate the correspondence
+for the clipped part.
 
-Known limitation: the silhouette is the crop rectangle, because the datasets
-have boxes rather than masks. That teaches the model to find rectangular
-patches; a silhouette (GrabCut or a segmentation model) is the next refinement.
+What this generator is for: isolating capability. If the model cannot find a
+high-contrast polygon and match it under blur and noise, it will not do better
+on a logo photographed in the wild. What it cannot provide is realism —
+appearance change, texture, occlusion by other objects, real backgrounds. That
+is the next generator, not this one.
 
 ## Why per-image
 
