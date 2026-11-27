@@ -66,8 +66,12 @@ runs; the write-up follows once the work is finished.
 - Added the two losses for a first training attempt: a boundary heatmap target at
   decoder resolution with a penalty-reduced focal loss, and symmetric InfoNCE on
   descriptors at corresponding boundary points with a symmetry mask. Both are
-  checked numerically (`python -m osid.model.losses`) before any training loop
-  exists.
+  checked numerically (`python -m osid.model.losses`).
+- Added the training loop: on-the-fly synthetic pairs, both views through the
+  frozen backbone, boundary and descriptor losses, validation on a separate seed
+  range, `heads.pt` and `history.json` in `outputs/train/`, and `make train`.
+- First 60 steps: heatmap loss 182.8 -> 1.1, validation precision 0.72, recall
+  0.35; descriptor loss 6.59 -> 4.69 against an ln 128 = 4.85 chance floor.
 
 ## Phase 0 (not started)
 

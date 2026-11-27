@@ -102,6 +102,9 @@ analyze: ## Generate failure-analysis plots and report
 		--results $(ANALYZE_RESULTS) \
 		--output $(ANALYZE_OUTPUT) $(ARGS)
 
+train: ## Train the model heads on synthetic shapes (ARGS="--steps 200")
+	$(PYTHON) -m osid.model.train $(ARGS)
+
 ui: ## Serve the pair inspector (ARGS="--port 8765 --models sift roma")
 	$(PYTHON) main.py ui $(ARGS)
 

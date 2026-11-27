@@ -87,6 +87,7 @@ descriptors               N x 128              gathered from the map
 | `heads.py` | fusion decoder to stride 4, boundary head, descriptor head | decoder depth, widths, head design |
 | `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned |
 | `losses.py` | boundary heatmap target + focal loss, descriptor InfoNCE | loss design, temperatures, symmetry handling |
+| `train.py` | training loop on synthetic shapes, validation, checkpoints | batch construction, optimiser, logging |
 | `matcher.py` | matching utilities: mutual NN, ratio test | matching rules, when you want them shared |
 | `adapter.py` | benchmark adapter: detect both images, then match | the matcher used for benchmarking, homography settings |
 | `synth.py` | synthetic shapes on flat backgrounds, with masks and an exact homography | shape complexity, contrast, blur, noise, placement |
@@ -178,6 +179,33 @@ pairs (0.003) from shuffled ones (14.7).
 
 Deferred on purpose: coverage/spread regularisation, subpixel offset regression,
 curvature weighting. Each is a refinement of a signal that has to exist first.
+
+## Train
+
+```bash
+make train ARGS="--steps 200"            # default: CUDA, batch 1, 448 px
+uv run python -m osid.model.train --steps 60 --log-every 20
+```
+
+Each step generates a pair, runs both views through the frozen backbone and the
+heads, and applies the two losses. Optimiser is AdamW on the 493k trainable
+parameters; the backbone receives no gradients. Validation uses a different seed
+range for the generator, and `heads.pt` plus `history.json` land in
+`outputs/train/`.
+
+The first 60 steps, as a sanity check that the machinery learns at all:
+
+```text
+step  1  heat 182.8  desc 6.59  val heat 33.2  P 0.05  R 0.07
+step 20  heat   2.5  desc 4.76  val heat  2.3  P 0.00  R 0.00
+step 60  heat   1.1  desc 4.69  val heat  1.2  P 0.72  R 0.35
+```
+
+Heatmap loss falls two orders of magnitude and validation precision climbs to
+0.72 with recall still short — the expected shape early on, since the focal loss
+initially prefers predicting nothing. Descriptor loss moves slowly: with 128
+points the random baseline is ln 128 ≈ 4.85, so 4.69 is a small improvement and
+the next run should be longer.
 
 ## Why per-image
 

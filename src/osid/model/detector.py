@@ -109,6 +109,22 @@ class DetectorDescriptor(nn.Module):
         """
         return self._predict(self.backbone(image))
 
+    def maps(self, image: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the dense boundary logits and descriptor map.
+
+        Training needs the dense outputs rather than a thresholded detection
+        set, so the same forward is exposed without the peak extraction.
+
+        Args:
+            image: ``(H, W, 3)`` uint8 RGB image.
+
+        Returns:
+            ``(1, 1, h, w)`` boundary logits and ``(1, D, h, w)`` descriptors.
+        """
+        features = self.backbone(image)
+        fused = self.decoder(features.layers)
+        return self.boundary(fused), self.descriptor(fused)
+
     def detect(self, image: np.ndarray) -> Detections:
         """Detect keypoints and describe them.
 
