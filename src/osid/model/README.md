@@ -88,7 +88,7 @@ descriptors               N x 128              gathered from the map
 | `detector.py` | the model: `detect(image) -> Detections` | how keypoints are selected, what is returned |
 | `matcher.py` | matching utilities: mutual NN, ratio test | matching rules, when you want them shared |
 | `adapter.py` | benchmark adapter: detect both images, then match | the matcher used for benchmarking, homography settings |
-| `synth.py` | synthetic pairs: object pasted into two backgrounds, with masks and an exact homography | placement, degradation, occlusion, backgrounds |
+| `synth.py` | synthetic shapes on flat backgrounds, with masks and an exact homography | shape complexity, contrast, blur, noise, placement |
 | `__main__.py` | run one image and write an overlay | the quickest way to see the model work |
 
 ## Run it
@@ -110,10 +110,21 @@ contrast against the background, Gaussian blur, and additive noise. Backgrounds
 can differ between views, so the only shared signal is the shape.
 
 ```bash
-uv run python -m osid.model.synth --samples 6             # contact sheet
-uv run python -m osid.model.synth --samples 20 --check    # label sanity
-uv run python -m osid.model.synth --grid                  # contrast × blur grid
+uv run python -m osid.model.synth --samples 6              # contact sheet
+uv run python -m osid.model.synth --samples 20 --check     # label sanity
+uv run python -m osid.model.synth --grid                   # contrast × blur grid
+uv run python -m osid.model.synth --samples 4 --seed 11    # reproducible sheet
 ```
+
+Two views of the same generator. Random pairs show what a training batch looks
+like — different backgrounds, shapes, scales and angles per view:
+
+![Synthetic pairs: the same polygon on two different backgrounds with different contrast, blur and noise](../../../docs/devnotes/images/week4/synthetic_examples.png)
+
+The grid holds everything fixed except contrast and blur, which is how the
+knobs are checked rather than assumed:
+
+![Synthetic grid: one polygon at four contrast levels and three blur levels](../../../docs/devnotes/images/week4/synthetic_grid.png)
 
 `--check` verifies the label two ways. Projecting view A's polygon vertices
 through the homography and comparing them with view B's gives a reprojection

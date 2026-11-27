@@ -335,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Preview synthetic shape pairs.")
     parser.add_argument("--samples", type=int, default=6)
+    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--size", type=int, default=448)
     parser.add_argument(
         "--check",
@@ -353,7 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    generator = ShapePairGenerator(size=args.size, limit=args.samples, seed=1)
+    generator = ShapePairGenerator(size=args.size, limit=args.samples, seed=args.seed)
     if args.check:
         ious = []
         errors = []
